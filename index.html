@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a0b3d">
+<title>CyberQuiz Live</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 5 88 20v28c0 24-16 40-38 47C28 88 12 72 12 48V20Z' fill='%237b2ff7'/%3E%3Cpath d='M32 50l12 12 24-26' stroke='%23fff' stroke-width='10' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== Shared SVG symbols & gradients ===== -->
+<svg class="defs" width="0" height="0" aria-hidden="true">
+  <defs>
+    <symbol id="s-tri" viewBox="0 0 100 100"><polygon points="50,8 94,88 6,88" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></symbol>
+    <symbol id="s-dia" viewBox="0 0 100 100"><polygon points="50,4 96,50 50,96 4,50" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></symbol>
+    <symbol id="s-cir" viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="currentColor"/></symbol>
+    <symbol id="s-sq" viewBox="0 0 100 100"><rect x="10" y="10" width="80" height="80" rx="8" fill="currentColor"/></symbol>
+
+    <linearGradient id="gShield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b06bff"/><stop offset=".55" stop-color="#6a2cf0"/><stop offset="1" stop-color="#2a6cff"/>
+    </linearGradient>
+    <linearGradient id="gGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff3a8"/><stop offset=".4" stop-color="#ffcf3f"/><stop offset="1" stop-color="#d48a00"/>
+    </linearGradient>
+    <linearGradient id="gSilver" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#cfd6e4"/><stop offset="1" stop-color="#8a94a8"/>
+    </linearGradient>
+    <linearGradient id="gBronze" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd2a6"/><stop offset=".5" stop-color="#e08a45"/><stop offset="1" stop-color="#9a4f18"/>
+    </linearGradient>
+    <linearGradient id="gText" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#ffd6ff"/><stop offset="1" stop-color="#9fd8ff"/>
+    </linearGradient>
+    <linearGradient id="gSweep" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3cf7c8" stop-opacity="0"/><stop offset="1" stop-color="#3cf7c8" stop-opacity=".55"/>
+    </linearGradient>
+    <linearGradient id="gShine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+</svg>
+
+<!-- ===== Animated background ===== -->
+<svg id="bg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12062e"/><stop offset=".55" stop-color="#2b0e6e"/><stop offset="1" stop-color="#081c4f"/>
+    </linearGradient>
+    <filter id="bgBlur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="70"/></filter>
+    <pattern id="bgGrid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#fff" stroke-opacity=".045"/>
+    </pattern>
+    <linearGradient id="gWire" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3cf7c8" stop-opacity="0"/><stop offset=".5" stop-color="#3cf7c8" stop-opacity=".6"/><stop offset="1" stop-color="#b06bff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bgGrad)"/>
+  <g filter="url(#bgBlur)" opacity=".75">
+    <circle r="260" fill="#7b2ff7"><animate attributeName="cx" values="300;520;260;300" dur="22s" repeatCount="indefinite"/><animate attributeName="cy" values="200;380;520;200" dur="26s" repeatCount="indefinite"/></circle>
+    <circle r="300" fill="#1368ce"><animate attributeName="cx" values="1300;1100;1380;1300" dur="24s" repeatCount="indefinite"/><animate attributeName="cy" values="700;480;300;700" dur="20s" repeatCount="indefinite"/></circle>
+    <circle r="200" fill="#e21b3c" opacity=".6"><animate attributeName="cx" values="900;700;1050;900" dur="28s" repeatCount="indefinite"/><animate attributeName="cy" values="150;300;120;150" dur="18s" repeatCount="indefinite"/></circle>
+    <circle r="220" fill="#00b894" opacity=".45"><animate attributeName="cx" values="600;850;500;600" dur="30s" repeatCount="indefinite"/><animate attributeName="cy" values="820;700;860;820" dur="23s" repeatCount="indefinite"/></circle>
+  </g>
+  <rect width="1600" height="900" fill="url(#bgGrid)"/>
+  <g class="wires" fill="none" stroke="url(#gWire)" stroke-width="2">
+    <path id="w1" d="M-20 160 H380 L440 220 H760 L820 160 H1620"/>
+    <path id="w2" d="M-20 760 H260 L320 700 H900 L960 760 H1620"/>
+    <path id="w3" d="M1180 -20 V240 L1240 300 V920"/>
+    <path id="w4" d="M180 -20 V420 L240 480 V920"/>
+  </g>
+  <g fill="#3cf7c8" filter="url(#glow)">
+    <circle r="4"><animateMotion dur="7s" repeatCount="indefinite"><mpath href="#w1"/></animateMotion></circle>
+    <circle r="4"><animateMotion dur="9s" begin="-3s" repeatCount="indefinite"><mpath href="#w2"/></animateMotion></circle>
+    <circle r="3.5" fill="#d9a6ff"><animateMotion dur="6s" begin="-2s" repeatCount="indefinite"><mpath href="#w3"/></animateMotion></circle>
+    <circle r="3.5" fill="#d9a6ff"><animateMotion dur="8s" begin="-5s" repeatCount="indefinite"><mpath href="#w4"/></animateMotion></circle>
+  </g>
+  <g class="floaters">
+    <use href="#s-tri" x="120" y="560" width="70" height="70" class="fl" style="color:#e21b3c;--d:14s;--del:0s"/>
+    <use href="#s-dia" x="1380" y="120" width="80" height="80" class="fl" style="color:#1368ce;--d:17s;--del:-4s"/>
+    <use href="#s-cir" x="1460" y="620" width="56" height="56" class="fl" style="color:#d89e00;--d:12s;--del:-2s"/>
+    <use href="#s-sq" x="700" y="60" width="54" height="54" class="fl" style="color:#26890c;--d:15s;--del:-7s"/>
+    <use href="#s-tri" x="1050" y="780" width="46" height="46" class="fl" style="color:#b06bff;--d:13s;--del:-9s"/>
+    <use href="#s-sq" x="60" y="80" width="40" height="40" class="fl" style="color:#1368ce;--d:16s;--del:-5s"/>
+    <use href="#s-cir" x="480" y="820" width="34" height="34" class="fl" style="color:#e21b3c;--d:11s;--del:-3s"/>
+    <use href="#s-dia" x="880" y="420" width="30" height="30" class="fl" style="color:#3cf7c8;--d:19s;--del:-6s"/>
+  </g>
+</svg>
+
+<main id="app" aria-live="polite"></main>
+<div id="toast" role="status"></div>
+
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="questions.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
