@@ -347,8 +347,10 @@ h1, h2 { margin: .3em 0; line-height: 1.25; }
   .opt-grid { grid-template-columns: 1fr; }
   .logo-t1 { font-size: 58px; }
 }
+/* Reduced motion: only calm the endless background drift. The game's own feedback
+   (timers, reveals, podium) stays animated because it carries meaning. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  #bg .fl, #bg .wires path { animation: none; }
 }
 
 /* ---------- admin dock & panel (host) ---------- */
@@ -459,3 +461,7 @@ h1, h2 { margin: .3em 0; line-height: 1.25; }
 .gap-line { margin: 0; font-size: .95rem; } .gap-line b { color: #ffcf3f; }
 .live-hint { margin-top: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .85rem; }
 .live-hint i { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); animation: blink 1.2s ease-in-out infinite; }
+
+.rank-row > .rbar { position: absolute; inset: 0 auto 0 0; z-index: 0; pointer-events: none; }
+.rank-row > :not(.rbar) { position: relative; z-index: 1; }
+.rn { flex: 1; min-width: 0; }

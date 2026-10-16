@@ -15,6 +15,11 @@ A live, Kahoot-style quiz that runs as a static site (GitHub Pages works). Playe
 
 **Players (phone)**: scan the QR → enter a nickname → tap the colored answer. If the connection drops, tap "Reconnect" (เชื่อมต่อใหม่). Your score is kept.
 
+## Screens
+- **Projector**: lobby + QR → question (countdown ring, radar) → answer reveal → scoreboard after each question (top 5, rank changes, % correct, fastest answer, correct-answer card) → podium + confetti
+- **Phone**: join → get ready (countdown ring) → answer → correct / wrong (shows the right answer next to yours) → your rank while the projector shows the scoreboard → final result
+- `clickfix-demo.html`: animated ClickFix SAFE DEMO for the training (simulation only, no real commands)
+
 ## Scoring
 Correct answer = 500–1000 points depending on speed, plus a streak bonus (+100 per consecutive correct answer, max +500).
 
