@@ -31,7 +31,9 @@ git push origin main
 The site will be at `https://<user>.github.io/<repo>/`
 
 ## Technical notes
-- Realtime runs over WebRTC (PeerJS): **the host's browser acts as the game server**. No backend is needed.
+- Realtime runs through free public MQTT brokers over secure WebSocket (EMQX `:8084` and HiveMQ `:8884`), see `net.js`. Host and players both connect out to a broker, so it works for online meetings where everyone is on a different network (home Wi‑Fi, 4G, office).
+- **The host's browser is the game server.** It listens on both brokers at once, and each phone joins through whichever broker its network can reach.
 - Keep the host tab open in the foreground for the whole game (refreshing ends the room).
-- Uses the free PeerJS cloud signaling server (0.peerjs.com).
-- Tested with 1 host + 2 players across all 9 questions.
+- Messages pass through a public broker under a random room topic. Fine for a quiz (nicknames and answers only); don't put anything sensitive in the questions.
+- A network that blocks ports 8084 and 8884 can't join. Phones can switch to 4G.
+- Tested: 1 host + 2 players across all 9 questions, plus a player whose network blocks the first broker.

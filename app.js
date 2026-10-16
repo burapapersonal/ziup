@@ -1,9 +1,9 @@
 'use strict';
 /* CyberQuiz Live — Kahoot-style live quiz.
-   Static site (GitHub Pages ok). Realtime via WebRTC (PeerJS): the host's browser is the game server,
+   Static site (GitHub Pages ok). Realtime via public MQTT brokers (net.js): the host's browser is the game server,
    players connect to it using the 6-digit PIN. */
 
-const PREFIX = 'cyberquiz-live-v1-';
+
 const SHAPES = ['tri', 'dia', 'cir', 'sq'];
 const COLORS = ['#d01937', '#1368ce', '#a87300', '#1f7a0a'];
 const LETTERS = ['A', 'B', 'C', 'D'];
@@ -458,25 +458,25 @@ const Host = {
     }
   },
 
-  createPeer(tries) {
+  async createPeer(tries) {
     const pin = String(Math.floor(100000 + Math.random() * 900000));
-    const peer = new Peer(PREFIX + pin, { debug: 1 });
-    peer.on('open', () => {
-      if (this.phase !== 'connecting') return peer.destroy();
-      this.peer = peer; this.pin = pin; this.lobby();
-    });
-    peer.on('connection', c => this.onConn(c));
-    peer.on('disconnected', () => { if (!peer.destroyed && this.peer === peer) setTimeout(() => { try { peer.reconnect(); } catch { /* ignore */ } }, 1500); });
-    peer.on('error', e => {
-      if (e.type === 'unavailable-id' && tries < 6) { peer.destroy(); this.createPeer(tries + 1); return; }
-      if (e.type === 'peer-unavailable') return;
-      if (this.phase === 'connecting') {
-        render(`<div class="center"><h2>เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</h2><p class="muted">${esc(e.type || e.message)} — ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่</p>
-          <div class="row"><button class="btn" id="retry">ลองใหม่</button><button class="btn btn-ghost" id="back">กลับ</button></div></div>`, 'v-host');
-        $('#retry').onclick = () => Host.open(this.quiz);
-        $('#back').onclick = () => editorView();
-      } else toast('การเชื่อมต่อมีปัญหา: ' + (e.type || e.message));
-    });
+    const net = new Net.Host();
+    try {
+      const claimed = await net.open(pin);
+      if (this.phase !== 'connecting') return net.destroy();
+      if (!claimed) {
+        if (tries < 6) return this.createPeer(tries + 1);
+        throw new Error('สุ่ม PIN ไม่สำเร็จ');
+      }
+      net.on('connection', c => this.onConn(c));
+      this.peer = net; this.pin = pin; this.lobby();
+    } catch (e) {
+      if (this.phase !== 'connecting') return;
+      render(`<div class="center"><h2>เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</h2><p class="muted">${esc(e.message)} — ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่</p>
+        <div class="row"><button class="btn" id="retry">ลองใหม่</button><button class="btn btn-ghost" id="back">กลับ</button></div></div>`, 'v-host');
+      $('#retry').onclick = () => Host.open(this.quiz);
+      $('#back').onclick = () => editorView();
+    }
   },
 
   send(p, msg) { if (p.conn && p.conn.open) { try { p.conn.send(msg); } catch { /* ignore */ } } },
@@ -999,26 +999,23 @@ const Player = {
     this.pin = pin; this.name = name; this.token = this.getToken();
     this.state = 'joining';
     render(`<div class="center">${Art.loader()}<h2>กำลังเชื่อมต่อห้อง ${esc(pin)}...</h2></div>`, 'v-player');
-    const peer = new Peer({ debug: 1 });
-    this.peer = peer;
+    const net = new Net.Player();
+    this.peer = net;
     const fail = msg => {
-      if (this.peer !== peer || this.state !== 'joining') return;
+      if (this.peer !== net || this.state !== 'joining') return;
       this.teardown(); homeView(pin); toast(msg, 4500);
     };
-    this.joinTimer = setTimeout(() => fail('เชื่อมต่อไม่สำเร็จ — ตรวจ PIN และอินเทอร์เน็ต แล้วลองใหม่'), 25000);
-    peer.on('open', () => {
-      const conn = peer.connect(PREFIX + pin, { reliable: true, serialization: 'json' });
+    this.joinTimer = setTimeout(() => fail('เชื่อมต่อไม่สำเร็จ — ตรวจ PIN และอินเทอร์เน็ต แล้วลองใหม่'), 30000);
+    net.join(pin).then(conn => {
+      if (this.peer !== net) return;
+      if (!conn) return fail('ไม่พบห้อง PIN นี้ — ผู้จัดอาจยังไม่เปิดห้อง หรือเน็ตบล็อกการเชื่อมต่อ');
       this.conn = conn;
-      conn.on('open', () => conn.send({ t: 'join', name, token: this.token }));
+      const hello = () => conn.send({ t: 'join', name: this.name, token: this.token });
       conn.on('data', m => this.onMsg(m));
       conn.on('close', () => this.lost(conn));
-      conn.on('error', () => this.lost(conn));
-    });
-    peer.on('error', e => {
-      if (e.type === 'peer-unavailable') fail('ไม่พบห้อง PIN นี้ — ผู้จัดอาจยังไม่เปิดห้อง');
-      else if (this.state === 'joining') fail('เชื่อมต่อไม่สำเร็จ (' + e.type + ')');
-    });
-    peer.on('disconnected', () => { if (!peer.destroyed && this.peer === peer) try { peer.reconnect(); } catch { /* ignore */ } });
+      conn.on('reconnect', hello); // network blip: re-attach to the same player slot
+      hello();
+    }, () => fail('เชื่อมต่อไม่สำเร็จ — ลองสลับ Wi‑Fi / 4G แล้วลองใหม่'));
   },
 
   lost(conn) {
@@ -1238,7 +1235,7 @@ const Player = {
 /* ---------------- boot ---------------- */
 (function boot() {
   const pin = new URLSearchParams(location.search).get('pin') || '';
-  if (typeof Peer === 'undefined') {
+  if (typeof mqtt === 'undefined') {
     render(`<div class="center"><h2>โหลดไลบรารีไม่สำเร็จ</h2><p class="muted">ตรวจสอบอินเทอร์เน็ต แล้วรีเฟรชหน้า</p></div>`);
     return;
   }
