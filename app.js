@@ -5,7 +5,7 @@
 
 const PREFIX = 'cyberquiz-live-v1-';
 const SHAPES = ['tri', 'dia', 'cir', 'sq'];
-const COLORS = ['#e21b3c', '#1368ce', '#d89e00', '#26890c'];
+const COLORS = ['#d01937', '#1368ce', '#a87300', '#1f7a0a'];
 const LETTERS = ['A', 'B', 'C', 'D'];
 const AV_COLORS = ['#ff3d71', '#00c48c', '#ffaa00', '#0095ff', '#a259ff', '#ff6b35', '#00b8c9', '#e84393'];
 const TIME_CHOICES = [5, 10, 20, 30, 45, 60, 90, 120];
@@ -149,6 +149,9 @@ const Art = {
 
   check: () => `
   <svg class="fb-icon ok" viewBox="0 0 160 160" aria-hidden="true">
+    <circle cx="80" cy="80" r="56" fill="none" stroke="#7dffb0" stroke-width="2">
+      <animate attributeName="r" values="56;100" dur="2.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values=".7;0" dur="2.2s" repeatCount="indefinite"/></circle>
     <g class="burst" stroke="#fff" stroke-width="6" stroke-linecap="round">
       ${Array.from({ length: 10 }, (_, i) => `<line x1="80" y1="14" x2="80" y2="2" transform="rotate(${i * 36} 80 80)"/>`).join('')}
     </g>
@@ -158,6 +161,9 @@ const Art = {
 
   cross: () => `
   <svg class="fb-icon bad" viewBox="0 0 160 160" aria-hidden="true">
+    <g class="cracks" stroke="#ffb3c1" stroke-width="3" fill="none" stroke-linecap="round">
+      <path d="M14 40 32 52 28 66"/><path d="M146 116 128 110 132 96"/><path d="M138 30 124 44"/>
+    </g>
     <circle class="ring" cx="80" cy="80" r="56" fill="#fff" fill-opacity=".14" stroke="#fff" stroke-width="8"/>
     <path class="mark" d="M58 58l44 44" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
     <path class="mark m2" d="M102 58l-44 44" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
@@ -179,6 +185,25 @@ const Art = {
         <animate attributeName="opacity" values=".7;0" dur="2.4s" begin="${i * .8}s" repeatCount="indefinite"/></circle>`).join('')}
     </svg>
     <div class="pulse-inner">${inner}</div>
+  </div>`,
+
+  flame: () => `<svg class="flame" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 2c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9Z" fill="#ffb347"/></svg>`,
+
+  bolt: () => `<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="#3cf7c8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7Z"/></svg>`,
+
+  readyRing: (n) => `
+  <div class="gr-ring">
+    <svg viewBox="0 0 240 240" aria-hidden="true">
+      <circle cx="120" cy="120" r="80" fill="rgba(0,0,0,.28)" stroke="rgba(255,255,255,.14)" stroke-width="10"/>
+      <circle class="gr-fg" cx="120" cy="120" r="80" fill="none" stroke="#3cf7c8" stroke-width="10" stroke-linecap="round" transform="rotate(-90 120 120)"/>
+      <g class="gr-orbit">
+        <polygon points="120,6 132,26 108,26" fill="${COLORS[0]}"/>
+        <polygon points="234,120 222,132 210,120 222,108" fill="${COLORS[1]}"/>
+        <circle cx="120" cy="222" r="11" fill="#ffcf3f"/>
+        <rect x="8" y="109" width="22" height="22" rx="3" fill="${COLORS[3]}"/>
+      </g>
+    </svg>
+    <div class="gr-num"><small>ข้อที่</small><b>${n}</b></div>
   </div>`,
 
   trophy: () => `
@@ -777,6 +802,12 @@ const Host = {
     }
     const rank = this.ranking();
     rank.forEach((p, i) => { p.prevRank = prevOrder.indexOf(p.key) + 1; p.rank = i + 1; });
+    let fastest = null;
+    for (const p of this.players.values()) {
+      const a = this.answers.get(p.key);
+      if (a && a.choice === q.correct && (!fastest || a.elapsed < fastest.t)) fastest = { name: p.name, t: a.elapsed };
+    }
+    this.stats = { counts, nCorrect: counts[q.correct], fastest, total: rank.length };
     rank.forEach((p, i) => this.send(p, {
       t: 'result', ok: p.ok, answered: p.answered, points: p.last, score: p.score, streak: p.streak,
       rank: p.rank, total: rank.length, correctText: q.options[q.correct], correct: q.correct,
@@ -820,25 +851,77 @@ const Host = {
     const top = rank.slice(0, 5);
     const max = Math.max(1, top[0]?.score || 1);
     const last = this.qi === this.qs.length - 1;
+    const q = this.qs[this.qi];
+    const st = this.stats || { counts: [0, 0, 0, 0], nCorrect: 0, fastest: null, total: rank.length };
+    const pct = st.total ? Math.round(st.nCorrect / st.total * 100) : 0;
+    const C = 2 * Math.PI * 48;
+    const bmax = Math.max(1, ...st.counts);
+    const moveOf = p => (this.qi > 0 && p.prevRank) ? p.prevRank - p.rank : 0;
+
+    rank.forEach((p, i) => this.send(p, {
+      t: 'board', qi: this.qi, total: this.qs.length, last, rank: p.rank, players: rank.length,
+      move: moveOf(p), score: p.score, gain: p.last || 0, streak: p.streak,
+      around: rank.slice(Math.max(0, i - 1), i + 2).map(x => ({ rank: x.rank, name: x.name, score: x.score, me: x === p })),
+      ahead: i > 0 ? { name: rank[i - 1].name, gap: rank[i - 1].score - p.score } : null
+    }));
+
+    const arrow = mv => mv > 0
+      ? `<span class="mv up"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 4l7 8h-4v8H9v-8H5Z" fill="currentColor"/></svg>${mv}</span>`
+      : mv < 0 ? `<span class="mv down"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 20l7-8h-4V4H9v8H5Z" fill="currentColor"/></svg>${-mv}</span>`
+      : `<span class="mv same">—</span>`;
+
     render(`
-      <div class="board">
-        <header class="board-head">
-          <h1>กระดานคะแนน</h1>
-          <button class="btn btn-go" id="nextBtn" data-next>${last ? 'ประกาศผล 🏆' : 'ข้อถัดไป →'}</button>
-        </header>
-        <ol class="ranks">
-          ${top.length ? top.map((p, i) => {
-            const moved = p.prevRank && p.prevRank > p.rank && this.qi > 0;
-            return `
-            <li class="rank-row" style="--k:${i};--w:${Math.max(.18, p.score / max)}">
-              <span class="rk">${i + 1}</span>
-              ${avatar(p.name, 46)}
-              <span class="rn">${esc(p.name)}${p.streak >= 2 ? `<em class="streak">🔥 ${p.streak}</em>` : ''}${moved ? '<svg class="up" viewBox="0 0 24 24" width="22" height="22"><path d="M12 4l7 8h-4v8H9v-8H5Z" fill="#3cf7c8"/></svg>' : ''}</span>
-              <span class="rbar"></span>
-              <span class="rs" data-score="${p.score}" data-from="${p.score - (p.last || 0)}">0</span>
-            </li>`;
-          }).join('') : '<li class="muted">ไม่มีผู้เล่น</li>'}
-        </ol>
+      <div class="board2">
+        <section class="b-left">
+          <header class="board-head">
+            <h1>กระดานคะแนน</h1>
+            <span class="badge">หลังข้อ ${this.qi + 1} / ${this.qs.length}</span>
+          </header>
+          <ol class="ranks">
+            ${top.length ? top.map((p, i) => `
+              <li class="rank-row" style="--k:${i};--w:${Math.max(.12, p.score / max)}">
+                <span class="rbar"></span>
+                <span class="rk">${i + 1}</span>
+                ${avatar(p.name, 50)}
+                <span class="rn"><span class="rn-t">${esc(p.name)}</span>${p.streak >= 2 ? `<em class="streak">${Art.flame()}${p.streak} ข้อ</em>` : ''}</span>
+                ${arrow(moveOf(p))}
+                <span class="rg">+${(p.last || 0).toLocaleString()}</span>
+                <span class="rs" data-score="${p.score}" data-from="${p.score - (p.last || 0)}">0</span>
+              </li>`).join('') : '<li class="muted">ไม่มีผู้เล่น</li>'}
+          </ol>
+          ${rank.length > 5 ? `<p class="muted more">และผู้เล่นอีก ${rank.length - 5} คน · ดูอันดับตัวเองได้ในมือถือ</p>` : ''}
+        </section>
+        <aside class="b-right">
+          <div class="card sum">
+            <div class="muted">สรุปข้อนี้</div>
+            <div class="sum-top">
+              <svg class="donut" viewBox="0 0 120 120" role="img" aria-label="ตอบถูก ${pct}%">
+                <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="14"/>
+                <circle class="donut-fg" cx="60" cy="60" r="48" fill="none" stroke="#3cf7c8" stroke-width="14" stroke-linecap="round"
+                  style="--len:${(C * pct / 100).toFixed(1)};--C:${C.toFixed(1)}" transform="rotate(-90 60 60)"/>
+                <text x="60" y="69" text-anchor="middle" font-size="26" font-weight="800" fill="#fff">${pct}%</text>
+              </svg>
+              <div class="sum-nums">
+                <b>${st.nCorrect} / ${st.total}</b>
+                <span>คนตอบถูก</span>
+                ${st.fastest ? `<small>เร็วสุด ${st.fastest.t.toFixed(1)} วิ · ${esc(st.fastest.name)}</small>` : ''}
+              </div>
+            </div>
+            <div class="mini-bars">
+              ${q.idx.map((i, k) => `
+                <div class="mb ${i === q.correct ? 'right' : ''}" style="--c:${COLORS[i]};--h:${st.counts[i] / bmax};--k:${k}">
+                  <b>${st.counts[i]}</b><div class="mb-fill"></div>${shape(i, 16)}
+                </div>`).join('')}
+            </div>
+          </div>
+          <div class="answer-card">
+            <div class="ac-head"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6Z"/><path d="M9 12l2 2 4-4"/></svg>คำตอบที่ถูก</div>
+            <div class="ac-body">${shape(q.correct, 22)}<span>${esc(q.options[q.correct])}</span></div>
+            <small>หยุด · ยืนยัน · แจ้ง</small>
+          </div>
+          <button class="btn btn-go btn-big" id="nextBtn" data-next>${last ? 'ประกาศผล' : 'ข้อถัดไป'}
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </aside>
       </div>`, 'v-host v-board');
     $$('.rs').forEach((el, i) => setTimeout(() => countUp(el, +el.dataset.score, 1000, +el.dataset.from), 250 + i * 120));
     Sound.pop();
@@ -992,11 +1075,16 @@ const Player = {
         this.state = 'ready';
         render(`
           ${this.topbar(`<span class="p-q">ข้อ ${m.qi + 1}/${m.total}</span>`)}
-          <div class="center grow">
-            <div class="ready-num">${m.qi + 1}</div>
-            <h2>เตรียมตัว!</h2>
+          <div class="center grow pready">
+            ${Art.readyRing(m.qi + 1)}
+            <h1>เตรียมตัว!</h1>
+            <p class="muted">คำถามกำลังขึ้นบนจอใหญ่ มองจอแล้วรอกดได้เลย</p>
             ${Art.loader()}
+            <div class="tip">${Art.bolt()}<span>ตอบเร็ว = คะแนนเยอะ ตอบถูกติดกันได้โบนัสสูงสุด +500</span></div>
           </div>`, 'v-player v-pready');
+        break;
+      case 'board':
+        this.state = 'board'; this.board(m);
         break;
       case 'question':
         this.state = 'question'; this.question(m);
@@ -1021,6 +1109,7 @@ const Player = {
   },
 
   question(m) {
+    this.lastPick = null;
     render(`
       ${this.topbar(`<span class="p-q">ข้อ ${m.qi + 1}/${m.total}</span>`)}
       <svg class="p-timer" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect id="ptb" width="100" height="4" fill="#fff"/></svg>
@@ -1041,6 +1130,7 @@ const Player = {
     $('.p-opts').addEventListener('click', e => {
       const b = e.target.closest('.p-opt'); if (!b || this.state !== 'question') return;
       this.state = 'sent';
+      this.lastPick = { i: +b.dataset.i, text: $('span', b).textContent };
       b.classList.add('chosen');
       $$('.p-opt').forEach(x => x !== b && x.classList.add('faded'));
       navigator.vibrate?.(30);
@@ -1055,9 +1145,17 @@ const Player = {
     const cls = m.ok ? 'ok' : 'bad';
     const title = m.ok ? 'ถูกต้อง!' : m.answered ? 'ยังไม่ถูก' : 'หมดเวลา!';
     const icon = m.ok ? Art.check() : m.answered ? Art.cross() : Art.clock();
+    const lostStreak = (this.streak || 0) >= 2;
+    this.streak = m.streak;
+    const pick = this.lastPick;
     const sub = m.ok
-      ? (m.streak >= 2 ? `<div class="streak-pill">🔥 ตอบถูกติดกัน ${m.streak} ข้อ</div>` : '')
-      : `<div class="answer-was">คำตอบที่ถูก: ${shape(m.correct, 20)} <b>${esc(m.correctText)}</b></div>`;
+      ? (m.streak >= 2 ? `<div class="streak-pill">${Art.flame()} ตอบถูกติดกัน ${m.streak} ข้อ</div>` : '')
+      : `<p class="muted">${lostStreak ? 'สถิติตอบถูกติดกันหายไปแล้ว ข้อหน้าเอาใหม่!' : 'ไม่เป็นไร ข้อหน้าเอาใหม่!'}</p>
+         <div class="ans-box">
+           <small>คำตอบที่ถูกคือ</small>
+           <div class="ans-right" style="--c:${COLORS[m.correct]}">${shape(m.correct, 26)}<b>${esc(m.correctText)}</b></div>
+           ${pick ? `<div class="ans-mine" style="--c:${COLORS[pick.i]}">${shape(pick.i, 20)}<span>คุณตอบ: ${esc(pick.text)}</span></div>` : ''}
+         </div>`;
     render(`
       ${this.topbar()}
       <div class="center grow fb fb-${cls}">
@@ -1066,17 +1164,62 @@ const Player = {
         ${sub}
         <div class="pts">${m.ok ? '+<b id="pts">0</b>' : '<b>+0</b>'}</div>
         <p class="rank-line">คุณอยู่อันดับ <b>${m.rank}</b> จาก ${m.total}</p>
-        ${m.ahead ? `<p class="muted">ตามหลัง <b>${esc(m.ahead.name)}</b> อยู่ ${m.ahead.gap.toLocaleString()} คะแนน</p>` : m.rank === 1 ? '<p class="muted">คุณนำอยู่! 👑</p>' : ''}
+        ${m.ahead ? `<p class="muted">ตามหลัง <b>${esc(m.ahead.name)}</b> อยู่ ${m.ahead.gap.toLocaleString()} คะแนน</p>` : m.rank === 1 ? '<p class="muted">คุณนำอยู่!</p>' : ''}
       </div>`, `v-player v-pfb ${cls}`);
     if (m.ok) { countUp($('#pts'), m.points, 800); Sound.correct(); navigator.vibrate?.([40, 40, 40]); }
     else { Sound.wrong(); navigator.vibrate?.(200); }
     const sc = $('.p-score'); if (sc) countUp(sc, m.score, 900, from);
   },
 
+  board(m) {
+    const from = this.score;
+    this.score = m.score;
+    const tier = m.rank <= 3 ? ['gGold', 'gSilver', 'gBronze'][m.rank - 1] : null;
+    const ink = m.rank <= 3 ? ['#3a2600', '#23283a', '#2a1200'][m.rank - 1] : '#fff';
+    const mv = m.move > 0 ? `<div class="mv-pill up"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 4l7 8h-4v8H9v-8H5Z" fill="currentColor"/></svg>ขึ้นมา ${m.move} อันดับ</div>`
+      : m.move < 0 ? `<div class="mv-pill down"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 20l7-8h-4V4H9v8H5Z" fill="currentColor"/></svg>ตกลง ${-m.move} อันดับ</div>`
+      : m.qi > 0 ? '<div class="mv-pill same">รักษาอันดับไว้ได้</div>' : '';
+    render(`
+      ${this.topbar(`<span class="p-q">หลังข้อ ${m.qi + 1}/${m.total}</span>`)}
+      <div class="center grow pboard">
+        <div class="kicker">อันดับของคุณ</div>
+        <div class="rank-medal">
+          <svg viewBox="0 0 200 200" aria-hidden="true">
+            <g fill="#fff">
+              <path d="M100 4l3 9 9 3-9 3-3 9-3-9-9-3 9-3Z"><animate attributeName="opacity" values="0;1;0" dur="2s" repeatCount="indefinite"/></path>
+              <path d="M176 60l2 6 6 2-6 2-2 6-2-6-6-2 6-2Z"><animate attributeName="opacity" values="0;1;0" dur="2s" begin=".7s" repeatCount="indefinite"/></path>
+              <path d="M22 140l2 6 6 2-6 2-2 6-2-6-6-2 6-2Z"><animate attributeName="opacity" values="0;1;0" dur="2s" begin="1.3s" repeatCount="indefinite"/></path>
+            </g>
+            <circle cx="100" cy="100" r="74" fill="${tier ? `url(#${tier})` : '#46178f'}" stroke="#fff" stroke-opacity=".7" stroke-width="5"/>
+            <circle cx="100" cy="100" r="58" fill="none" stroke="#000" stroke-opacity=".12" stroke-width="4"/>
+          </svg>
+          <div class="rm-num" style="color:${ink}"><span>#</span><b>${m.rank}</b></div>
+        </div>
+        ${mv}
+        <div class="stat3">
+          <div><small>คะแนนรวม</small><b id="bs">${from.toLocaleString()}</b></div>
+          <div><small>ข้อนี้</small><b class="g">+${m.gain.toLocaleString()}</b></div>
+          <div><small>ถูกติดกัน</small><b class="o">${m.streak}</b></div>
+        </div>
+        <div class="around">
+          ${m.around.map((x, k) => `
+            <div class="ar-row ${x.me ? 'me' : ''}" style="--k:${k}">
+              <span class="ar-rk">${x.rank}</span>${avatar(x.name, 30)}
+              <span class="ar-n">${esc(x.name)}${x.me ? ' (คุณ)' : ''}</span>
+              <span class="ar-s">${x.score.toLocaleString()}</span>
+            </div>`).join('')}
+        </div>
+        <p class="gap-line">${m.ahead ? `อีก <b>${m.ahead.gap.toLocaleString()}</b> คะแนนจะแซง ${esc(m.ahead.name)}` : m.players > 1 ? 'คุณนำอยู่! รักษาไว้ให้ได้' : ''}</p>
+        <div class="live-hint"><i></i>ดูกระดานคะแนนบนจอใหญ่ · ${m.last ? 'กำลังจะประกาศผล' : 'ข้อถัดไปกำลังมา'}</div>
+      </div>`, 'v-player v-pboard');
+    countUp($('#bs'), m.score, 900, from);
+    Sound.pop();
+  },
+
   end(m) {
     this.score = m.score;
     const medal = m.rank <= 3 ? Art.medal(m.rank) : '';
-    const msg = m.rank === 1 ? 'แชมป์! 🏆' : m.rank <= 3 ? 'ขึ้นโพเดียม!' : m.rank <= Math.ceil(m.total / 2) ? 'เยี่ยมมาก!' : 'ขอบคุณที่ร่วมเล่น!';
+    const msg = m.rank === 1 ? 'แชมป์!' : m.rank <= 3 ? 'ขึ้นโพเดียม!' : m.rank <= Math.ceil(m.total / 2) ? 'เยี่ยมมาก!' : 'ขอบคุณที่ร่วมเล่น!';
     render(`
       ${this.topbar()}
       <div class="center grow">
