@@ -36,4 +36,5 @@ The site will be at `https://<user>.github.io/<repo>/`
 - Keep the host tab open in the foreground for the whole game (refreshing ends the room).
 - Messages pass through a public broker under a random room topic. Fine for a quiz (nicknames and answers only); don't put anything sensitive in the questions.
 - A network that blocks ports 8084 and 8884 can't join. Phones can switch to 4G.
-- Tested: 1 host + 2 players across all 9 questions, plus a player whose network blocks the first broker.
+- Public brokers rate-limit each connection (EMQX drops above ~10 msg/s), so the host batches per-player messages into one packet every 250 ms and sends shared messages once. Message rate stays flat however many players join.
+- Tested: 100 players (50 per broker) through all 9 questions with every answer and result delivered; plus real-browser runs and a player whose network blocks the first broker.

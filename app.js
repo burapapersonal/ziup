@@ -480,7 +480,10 @@ const Host = {
   },
 
   send(p, msg) { if (p.conn && p.conn.open) { try { p.conn.send(msg); } catch { /* ignore */ } } },
-  broadcast(msg) { for (const p of this.players.values()) this.send(p, typeof msg === 'function' ? msg(p) : msg); },
+  broadcast(msg) {
+    if (typeof msg === 'function') { for (const p of this.players.values()) this.send(p, msg(p)); return; }
+    try { this.peer?.broadcast(msg); } catch { /* ignore */ }
+  },
   connectedCount() { let n = 0; for (const p of this.players.values()) if (p.connected) n++; return n; },
   ranking() { return [...this.players.values()].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'th')); },
 

@@ -58,8 +58,38 @@ const Net = (() => {
     _close() { if (!this.open) return; this.open = false; this.emit('close'); }
   }
 
+  // Host-side connection: sends are queued and flushed in batches (see Host.flush).
+  class HostConn extends Conn {
+    constructor(host, client, id) { super(client, null, id); this.host = host; }
+    send(m) { if (this.open) this.host.enqueue(this.client, this.peer, m); }
+  }
+
+  // Public brokers rate-limit each connection (EMQX drops above ~10 msg/s), so the host never
+  // publishes one message per player. Per-player messages are bundled into one `_multi` packet on
+  // the room's `all` topic every FLUSH_MS, and messages for everyone go out once as `_all`.
+  const FLUSH_MS = 250;
+
   class Host extends Emitter {
-    constructor() { super(); this.clients = []; this.conns = new Map(); this.closed = false; }
+    constructor() { super(); this.clients = []; this.conns = new Map(); this.closed = false; this.queue = new Map(); this.timer = 0; }
+
+    enqueue(client, id, m) {
+      let q = this.queue.get(client);
+      if (!q) this.queue.set(client, q = {});
+      (q[id] ||= []).push(m);
+      this.timer ||= setTimeout(() => this.flush(), FLUSH_MS);
+    }
+
+    flush() {
+      clearTimeout(this.timer); this.timer = 0;
+      for (const [c, each] of this.queue) c.publish(this.base + 'all', enc({ t: '_multi', each }), { qos: 1 });
+      this.queue.clear();
+    }
+
+    // Same message for every player: one publish per broker. Pending per-player messages go first to keep order.
+    broadcast(m) {
+      this.flush();
+      for (const c of this.clients) c.publish(this.base + 'all', enc({ t: '_all', m }), { qos: 1 });
+    }
 
     // true = room claimed; false = PIN already in use; throws when no broker is reachable
     async open(pin) {
@@ -85,7 +115,7 @@ const Net = (() => {
         let conn = this.conns.get(env.from);
         if (env.m.t === '_bye') { conn?._close(); return; }
         if (!conn || !conn.open) {
-          conn = new Conn(c, this.base + 'p/' + env.from, env.from);
+          conn = new HostConn(this, c, env.from);
           this.conns.set(env.from, conn);
           this.emit('connection', conn);
         }
@@ -95,6 +125,7 @@ const Net = (() => {
     }
 
     destroy() {
+      this.flush();
       this.closed = true;
       for (const c of this.clients) {
         try { c.publish(this.base + 'room', '', { qos: 1, retain: true }); } catch { /* ignore */ }
@@ -124,12 +155,13 @@ const Net = (() => {
       {
         this.client = c;
         const conn = new Conn(c, base + 'h', id, m => ({ from: id, m }));
-        await subscribe(c, base + 'p/' + id);
+        await subscribe(c, base + 'all');
+        const deliver = m => { if (m?.t === '_close') conn._close(); else if (m) conn.emit('data', m); };
         c.on('message', (t, b) => {
-          if (t === base + 'p/' + id) {
-            const m = dec(b);
-            if (!m) return;
-            if (m.t === '_close') conn._close(); else conn.emit('data', m);
+          if (t === base + 'all') {
+            const pk = dec(b);
+            if (pk?.t === '_all') deliver(pk.m);
+            else if (pk?.t === '_multi') (pk.each?.[id] || []).forEach(deliver);
           } else if (t === base + 'room' && !dec(b)?.open) conn._close();
         });
         c.on('connect', () => conn.emit('reconnect'));
