@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZIUP Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --navy:#14233B; --orange:#A94A14; --slate:#46546A; --bg:#F5F3EE; --card:#FCFBF8; --line:#E2DDD3; --peach:#FBEFD9;
+          --good:#1f7a3d; --good-bg:#dff3e5; --bad:#b4232c; --bad-bg:#fbe1e3; --mid-bg:#fbefd2; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--navy); font: 14px/1.5 'IBM Plex Sans Thai', system-ui, sans-serif; }
+  button, input, textarea { font: inherit; color: inherit; }
+  h1, h2, h3, .num, .btn { font-family: 'Prompt', 'IBM Plex Sans Thai', sans-serif; }
+  .top { position: sticky; top: 0; z-index: 5; background: var(--navy); color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .brand { font: 700 18px 'Prompt', sans-serif; letter-spacing: 1px; }
+  .brand i { font-style: normal; color: #ffb37a; }
+  .ttl { flex: 1; min-width: 160px; font-weight: 600; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pin { font: 700 18px 'Prompt', sans-serif; background: rgba(255,255,255,.12); padding: 4px 12px; border-radius: 8px; letter-spacing: 2px; }
+  .phase { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: #ffb37a; color: var(--navy); }
+  .btn { border: 0; border-radius: 10px; padding: 9px 16px; cursor: pointer; font-weight: 600; font-size: 14px; background: #fff; color: var(--navy); box-shadow: inset 0 0 0 1px var(--line); }
+  .btn:hover { filter: brightness(.96); }
+  .btn.go { background: #1b8a4f; color: #fff; box-shadow: none; }
+  .btn.dark { background: var(--navy); color: #fff; box-shadow: none; }
+  .btn.warn { color: var(--bad); }
+  .btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 18px 20px 60px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .k { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
+  .k span { color: var(--slate); font-size: 12px; }
+  .k b { display: block; font: 700 26px 'Prompt', sans-serif; line-height: 1.2; }
+  .k.alert { background: var(--peach); border-color: #f0d7ad; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 18px; }
+  .card h2 { font-size: 17px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .card h2 small { font: 400 12px 'IBM Plex Sans Thai', sans-serif; color: var(--slate); margin-left: auto; }
+  .count { background: var(--orange); color: #fff; border-radius: 999px; font-size: 12px; padding: 1px 8px; }
+  .muted { color: var(--slate); }
+  .search { width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #fff; margin-bottom: 10px; }
+  .tbl { overflow-x: auto; max-height: 70vh; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 8px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+  thead th { position: sticky; top: 0; background: #f1ede5; font: 600 12px 'Prompt', sans-serif; color: var(--slate); z-index: 1; }
+  td.r, th.r { text-align: right; white-space: nowrap; }
+  td.rk { font: 700 14px 'Prompt', sans-serif; width: 34px; text-align: center; }
+  .nm b { display: block; } .nm small { color: var(--slate); }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #2fbf71; box-shadow: 0 0 0 3px rgba(47,191,113,.18); }
+  .dot.off { background: #b3ad9f; box-shadow: none; }
+  tr.off td { opacity: .55; }
+  .ans { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #ece7dd; color: var(--slate); }
+  .ans.yes { background: var(--good-bg); color: var(--good); }
+  .dots { display: flex; gap: 3px; }
+  .dots i { width: 12px; height: 12px; border-radius: 3px; background: #e7e2d8; }
+  .dots i.ok { background: #2fbf71; } .dots i.no { background: #e5484d; }
+  .list { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+  .li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+  .li .grow { flex: 1; min-width: 0; }
+  .li .grow small { display: block; color: var(--slate); font-size: 12px; }
+  .tag { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
+  .tag.in { background: var(--good-bg); color: var(--good); } .tag.out { background: #ece7dd; color: var(--slate); }
+  textarea { width: 100%; min-height: 84px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #fff; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .switch { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; margin-bottom: 10px; }
+  .switch input { width: 18px; height: 18px; accent-color: var(--orange); }
+  .banner { background: var(--peach); border: 1px solid #f0d7ad; border-radius: 14px; padding: 16px 18px; margin-bottom: 18px; }
+  .banner b { font-family: 'Prompt', sans-serif; }
+  .hist .li .grow b { display: block; }
+  .empty { padding: 16px; text-align: center; color: var(--slate); }
+  .login { max-width: 420px; margin: 40px auto; display: flex; flex-direction: column; gap: 12px; padding: 26px; }
+  .login h1 { margin: 0; font-size: 26px; }
+  .login p { margin: 0; }
+  .login label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
+  .login input { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font: 600 18px 'Prompt', sans-serif; letter-spacing: 2px; }
+  .login .btn { padding: 12px; font-size: 16px; }
+  .lmsg { min-height: 1.4em; color: var(--bad); font-weight: 600; }
+  .lmsg.info { color: var(--slate); font-weight: 400; }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 10px 18px; border-radius: 10px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">ZIUP <i>Monitor</i></div>
+  <div class="ttl" id="ttl">ไม่มีห้องที่เปิดอยู่</div>
+  <div class="pin" id="pin" hidden></div>
+  <span class="phase" id="phase" hidden></span>
+  <button class="btn go" id="advance" disabled>เริ่มเกม</button>
+  <button class="btn" id="skip" disabled>ข้ามข้อนี้</button>
+</header>
+
+<main class="wrap">
+  <form class="login card" id="login" autocomplete="off">
+    <h1>เข้าสู่หน้า PM</h1>
+    <p class="muted">ใส่ Game PIN ที่อยู่บนจอเกม และ passcode ที่ผู้จัดตั้งไว้ในหน้าแก้คำถาม</p>
+    <label>Game PIN<input id="lpin" inputmode="numeric" maxlength="6" placeholder="••••••" required></label>
+    <label>Passcode<input id="lcode" type="password" maxlength="32" placeholder="passcode ของ PM" required></label>
+    <button class="btn go" type="submit" id="lgo">เข้าสู่ระบบ</button>
+    <p class="lmsg" id="lmsg"></p>
+  </form>
+  <div class="banner" id="nohost" hidden>
+    <b>การเชื่อมต่อกับห้องหลุด</b> ผู้จัดอาจปิดห้องแล้ว ข้อมูลล่าสุดถูกบันทึกในเครื่องนี้ (ดูที่ "รายงานย้อนหลัง") ·
+    <a href="#" id="relog">เข้าห้องใหม่</a>
+  </div>
+
+  <div id="dash" hidden>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>ผู้เล่น <span class="count" id="pcount">0</span><small id="psub"></small></h2>
+        <input class="search" id="q" placeholder="ค้นหาชื่อ / ชื่อเล่น / หน่วยงาน">
+        <div class="tbl" id="players"><div class="empty">ยังไม่มีผู้เล่น</div></div>
+      </div>
+      <div class="card hist">
+        <h2>รายงานย้อนหลัง <small>เก็บไว้ในเครื่องนี้ · ดึงจากเครื่องผู้จัดอัตโนมัติ</small></h2>
+        <div class="list" id="history"></div>
+      </div>
+    </div>
+
+    <aside>
+      <div class="card">
+        <h2>รายงานห้องนี้</h2>
+        <div class="row">
+          <button class="btn dark" id="rpOpen" disabled>ดูรายงาน</button>
+          <button class="btn" id="rpCsv" disabled>Excel (CSV)</button>
+          <button class="btn" id="rpHtml" disabled>ดาวน์โหลด HTML</button>
+        </div>
+        <p class="muted" style="margin:8px 0 0;font-size:12px">ดูได้ตลอดระหว่างเล่น ข้อมูลอัปเดตทุกครั้งที่จบข้อ</p>
+      </div>
+
+      <div class="card" id="pendingCard">
+        <h2>รออนุมัติ <span class="count" id="pendN">0</span></h2>
+        <div class="list" id="pending"><div class="empty">ไม่มีคนรอ</div></div>
+      </div>
+
+      <div class="card">
+        <h2>รายชื่อผู้เข้าร่วม <span class="count" id="rosN">0</span><small id="rosSub"></small></h2>
+        <label class="switch"><input type="checkbox" id="rosOnly"> <span><b>อนุญาตเฉพาะรายชื่อนี้</b><br><small class="muted">คนที่ไม่อยู่ในรายชื่อจะต้องรอคุณกดอนุมัติ</small></span></label>
+        <textarea id="rosText" placeholder="วางรายชื่อ บรรทัดละ 1 คน เช่น&#10;สมชาย ใจดี&#10;Alice Smith"></textarea>
+        <div class="row" style="margin:8px 0 12px">
+          <button class="btn dark" id="rosAdd">เพิ่มรายชื่อ</button>
+          <button class="btn warn" id="rosClear">ล้างทั้งหมด</button>
+        </div>
+        <div class="list" id="roster"><div class="empty">ยังไม่มีรายชื่อ</div></div>
+      </div>
+
+      <div class="card">
+        <h2>ถูกนำออก <span class="count" id="kickN">0</span></h2>
+        <div class="list" id="kicked"><div class="empty">ไม่มี</div></div>
+      </div>
+    </aside>
+  </div>
+  </div>
+  <div class="card hist" id="offHist">
+    <h2>รายงานที่บันทึกไว้ในเครื่องนี้</h2>
+    <div class="list" id="history2"></div>
+  </div>
+</main>
+<div id="toast"></div>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script src="net.js"></script>
+<script src="report.js"></script>
+<script src="monitor.js"></script>
+</body>
+</html>

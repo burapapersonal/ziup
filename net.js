@@ -187,5 +187,29 @@ const Net = (() => {
     }
   }
 
-  return { Host, Player };
+  /* ---------- PM channel encryption ----------
+     PM (monitor) traffic crosses a public broker, so it is gzip-compressed and sealed with AES-GCM.
+     The key is derived from the PM passcode + room PIN (PBKDF2); the passcode itself is never sent. */
+  const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const pipe = async (u8, Stream) => new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new Stream('gzip'))).arrayBuffer());
+  const Seal = {
+    async key(pass, pin) {
+      const raw = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+      return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: new TextEncoder().encode('ziup-pm:' + pin), iterations: 150000, hash: 'SHA-256' },
+        raw, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    },
+    async seal(key, obj) {
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const zipped = await pipe(new TextEncoder().encode(JSON.stringify(obj)), CompressionStream);
+      const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, zipped));
+      return { t: 'adm', iv: b64(iv), ct: b64(ct) };
+    },
+    async open(key, pkt) {
+      const zipped = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(pkt.iv) }, key, unb64(pkt.ct)));
+      return JSON.parse(new TextDecoder().decode(await pipe(zipped, DecompressionStream)));
+    }
+  };
+
+  return { Host, Player, Seal };
 })();

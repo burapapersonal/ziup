@@ -465,3 +465,19 @@ h1, h2 { margin: .3em 0; line-height: 1.25; }
 .rank-row > .rbar { position: absolute; inset: 0 auto 0 0; z-index: 0; pointer-events: none; }
 .rank-row > :not(.rbar) { position: relative; z-index: 1; }
 .rn { flex: 1; min-width: 0; }
+
+/* ---------- join form: real name ---------- */
+.field .req { color: #ff8fa3; font-style: normal; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field-row .field { min-width: 0; }
+.field-row .field input { font-size: 1rem; padding: 12px; width: 100%; min-width: 0; }
+#full { font-size: 1.15rem; }
+.form-note { margin: -4px 0 0; font-size: .82rem; color: var(--muted); text-align: center; }
+.ap-name small { font-weight: 400; font-size: .8em; }
+
+/* ---------- editor: PM passcode ---------- */
+.pm-row { display: flex; align-items: center; gap: 12px; padding: 14px 16px; margin: 0 0 16px; flex-wrap: wrap; }
+.pm-row > div { flex: 1; min-width: 240px; }
+.pm-row p { margin: 4px 0 0; font-size: .85rem; }
+.pm-row code { background: rgba(0,0,0,.3); padding: 1px 6px; border-radius: 6px; word-break: break-all; }
+.pm-input { width: 190px; background: #fff; color: #1a0b3d; border: 0; border-radius: 10px; padding: 10px 12px; font: 700 1.15rem 'Kanit', monospace; letter-spacing: 2px; text-align: center; }

@@ -241,7 +241,20 @@ const Store = {
     } catch { /* ignore */ }
     return structuredClone(window.DEFAULT_QUIZ);
   },
-  save(q) { try { localStorage.setItem(this.KEY, JSON.stringify(q)); } catch { /* ignore */ } }
+  save(q) { try { localStorage.setItem(this.KEY, JSON.stringify(q)); } catch { /* ignore */ } },
+  // Passcode the PM types on the Monitor page. Kept only in this browser; never sent over the network.
+  pmCode() {
+    try {
+      let c = localStorage.getItem('ziup-pmcode');
+      if (!c) { c = Store.newPmCode(); localStorage.setItem('ziup-pmcode', c); }
+      return c;
+    } catch { return Store._pm ||= Store.newPmCode(); }
+  },
+  setPmCode(c) { try { localStorage.setItem('ziup-pmcode', c); } catch { Store._pm = c; } },
+  newPmCode() {
+    const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    return Array.from(crypto.getRandomValues(new Uint8Array(8)), b => abc[b % abc.length]).join('');
+  }
 };
 
 function normalizeQuiz(q) {
@@ -273,10 +286,9 @@ function validateQuiz(q) {
 function homeView(prefillPin = '') {
   Host.teardown();
   Player.teardown();
-  let saved = {};
-  try { saved = JSON.parse(sessionStorage.getItem('cq-player') || '{}'); } catch { /* ignore */ }
+  let me = {};
+  try { me = JSON.parse(localStorage.getItem('ziup-me') || '{}'); } catch { /* ignore */ }
   const pin = prefillPin || '';
-  const name = saved.name || '';
   render(`
     <div class="home">
       <div class="hero">${Art.logo()}</div>
@@ -287,9 +299,20 @@ function homeView(prefillPin = '') {
           <input id="pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" value="${esc(pin)}" required>
         </label>
         <label class="field">
-          <span>ชื่อเล่น</span>
-          <input id="nick" maxlength="16" placeholder="ชื่อที่จะโชว์บนจอ" value="${esc(name)}" required>
+          <span>ชื่อ-นามสกุลจริง <em class="req">*</em></span>
+          <input id="full" maxlength="60" placeholder="เช่น สมชาย ใจดี" value="${esc(me.full || '')}" autocomplete="name" required>
         </label>
+        <div class="field-row">
+          <label class="field">
+            <span>ชื่อเล่น (โชว์บนจอ)</span>
+            <input id="nick" maxlength="16" placeholder="ไม่บังคับ" value="${esc(me.nick || '')}">
+          </label>
+          <label class="field">
+            <span>หน่วยงาน / ฝ่าย</span>
+            <input id="dept" maxlength="40" placeholder="ไม่บังคับ" value="${esc(me.dept || '')}">
+          </label>
+        </div>
+        <p class="form-note">ชื่อจริงใช้ในรายงานผลของผู้จัด บนจอใหญ่จะโชว์แค่ชื่อเล่น</p>
         <button class="btn btn-big btn-go" type="submit">
           <span>เข้าร่วม</span>
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -303,14 +326,19 @@ function homeView(prefillPin = '') {
 
   const pinEl = $('#pin');
   pinEl.addEventListener('input', () => { pinEl.value = pinEl.value.replace(/\D/g, '').slice(0, 6); });
-  (pin ? $('#nick') : pinEl).focus();
+  (pin ? $('#full') : pinEl).focus();
   $('#joinForm').addEventListener('submit', e => {
     e.preventDefault();
-    const p = pinEl.value.trim(), n = $('#nick').value.replace(/\s+/g, ' ').trim();
+    const p = pinEl.value.trim();
+    const full = Report.cleanName($('#full').value);
+    const nick = Report.cleanName($('#nick').value) || full.split(' ')[0] || '';
+    const dept = Report.cleanName($('#dept').value);
     if (p.length !== 6) return toast('Game PIN ต้องเป็นตัวเลข 6 หลัก');
-    if (!n) return toast('ใส่ชื่อเล่นก่อนนะ');
+    if (Report.normName(full).split(' ').length < 2 || full.length < 4) { $('#full').focus(); return toast('กรอกชื่อและนามสกุลจริง เว้นวรรคระหว่างชื่อกับนามสกุล'); }
+    const info = { full, nick: nick.slice(0, 16), dept };
+    try { localStorage.setItem('ziup-me', JSON.stringify(info)); } catch { /* ignore */ }
     Sound.pop();
-    Player.join(p, n);
+    Player.join(p, info);
   });
   $('#toHost').addEventListener('click', () => editorView());
 }
@@ -355,17 +383,32 @@ function editorView() {
         <button class="btn btn-go" id="launch">▶ เปิดห้อง</button>
       </header>
       <p class="ed-hint">กดวงกลมทางขวาของตัวเลือกเพื่อกำหนดคำตอบที่ถูก · บันทึกอัตโนมัติในเบราว์เซอร์นี้</p>
+      <div class="pm-row card">
+        <div>
+          <b>Passcode สำหรับ PM (หน้า Monitor)</b>
+          <p class="muted">PM เปิด <code>${esc(location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, ''))}monitor.html</code> จากเครื่องไหนก็ได้ แล้วใส่ Game PIN + passcode นี้ · ตั้งก่อนแชร์จอ รหัสจะไม่แสดงบนจอเกม</p>
+        </div>
+        <input id="pmcode" class="pm-input" value="${esc(Store.pmCode())}" maxlength="32" spellcheck="false" aria-label="PM passcode">
+        <button class="btn btn-ghost btn-sm" id="pmNew">สุ่มใหม่</button>
+        <button class="btn btn-ghost btn-sm" id="pmCopy">คัดลอก</button>
+      </div>
       <div class="qlist">${quiz.questions.map(qHtml).join('')}</div>
       <div class="ed-actions">
         <button class="btn" id="add">＋ เพิ่มคำถาม</button>
         <button class="btn btn-ghost" id="export">ส่งออก JSON</button>
         <label class="btn btn-ghost">นำเข้า JSON<input type="file" id="import" accept=".json,application/json" hidden></label>
         <button class="btn btn-ghost danger" id="reset">รีเซ็ตเป็นชุดเริ่มต้น</button>
+        <button class="btn btn-ghost" id="monitor">Monitor · รายชื่อ · รายงานย้อนหลัง</button>
       </div>
     </div>`, 'v-editor');
 
   const save = () => Store.save(quiz);
   $('#back').onclick = () => homeView();
+  $('#monitor').onclick = () => openMonitor();
+  $('#pmcode').oninput = e => { const v = e.target.value.trim(); if (v.length >= 6) Store.setPmCode(v); };
+  $('#pmcode').onchange = e => { if (e.target.value.trim().length < 6) { toast('passcode ต้องยาวอย่างน้อย 6 ตัว'); e.target.value = Store.pmCode(); } };
+  $('#pmNew').onclick = () => { const c = Store.newPmCode(); Store.setPmCode(c); $('#pmcode').value = c; toast('ตั้ง passcode ใหม่แล้ว'); };
+  $('#pmCopy').onclick = () => navigator.clipboard?.writeText(Store.pmCode()).then(() => toast('คัดลอก passcode แล้ว'), () => {});
   $('#title').oninput = e => { quiz.title = e.target.value; save(); };
   $('#add').onclick = () => {
     quiz.questions.push({ text: '', options: ['', '', '', ''], correct: 0, time: 20 });
@@ -418,6 +461,11 @@ function editorView() {
   });
 }
 
+function openMonitor() {
+  const w = window.open('monitor.html' + (Host.phase !== 'idle' && Host.pin ? '?pin=' + Host.pin : ''), 'ziup-monitor', 'width=1320,height=860');
+  if (!w) toast('เบราว์เซอร์บล็อกหน้าต่างใหม่ ให้เปิด ' + location.href.replace(/[^/]*$/, '') + 'monitor.html เอง');
+}
+
 /* ================================================================
    HOST — the host browser is the game server
    ================================================================ */
@@ -430,6 +478,11 @@ const Host = {
     this.quiz = q;
     this.qs = q.questions.map(x => ({ ...x, idx: x.options.map((o, i) => o.trim() ? i : -1).filter(i => i >= 0) }));
     this.players = new Map(); this.byPeer = new Map();
+    this.pending = new Map(); this.kicked = new Map(); this.removed = [];
+    this.roster = Report.loadRoster();
+    this.session = null;
+    this.admins = new Set(); this.admKey = null;
+    this.pmCode = Store.pmCode();
     this.phase = 'connecting';
     render(`<div class="center">${Art.loader()}<h2>กำลังสร้างห้อง...</h2></div>`, 'v-host');
     this.createPeer(0);
@@ -445,6 +498,8 @@ const Host = {
       setTimeout(() => { try { peer.destroy(); } catch { /* ignore */ } }, 300);
     }
     this.phase = 'idle';
+    if (this.admins?.size) { this.pushState(true); }
+    this.admKey = null;
     $('#hostDock')?.remove(); $('#adminPanel')?.remove();
     window.removeEventListener('beforeunload', this.onUnload);
     document.removeEventListener('keydown', this.onKey);
@@ -469,7 +524,9 @@ const Host = {
         throw new Error('สุ่ม PIN ไม่สำเร็จ');
       }
       net.on('connection', c => this.onConn(c));
+      try { this.admKey = await Net.Seal.key(this.pmCode, pin); } catch { this.admKey = null; }
       this.peer = net; this.pin = pin; this.lobby();
+      this.pushState(true);
     } catch (e) {
       if (this.phase !== 'connecting') return;
       render(`<div class="center"><h2>เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</h2><p class="muted">${esc(e.message)} — ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่</p>
@@ -480,6 +537,118 @@ const Host = {
   },
 
   send(p, msg) { if (p.conn && p.conn.open) { try { p.conn.send(msg); } catch { /* ignore */ } } },
+
+  /* ---------- session record (saved in this browser, see report.js) ---------- */
+  newSession() {
+    this.session = {
+      id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: this.quiz.title, pin: this.pin, startedAt: Date.now(), endedAt: null, played: 0, passPct: 0.6,
+      questions: this.qs.map(q => ({ text: q.text, options: q.options, correct: q.correct, time: q.time }))
+    };
+  },
+  sessionSnapshot() {
+    const s = this.session || { id: 'live', title: this.quiz?.title || '', pin: this.pin, startedAt: null, endedAt: null, played: 0, passPct: 0.6, questions: this.qs.map(q => ({ text: q.text, options: q.options, correct: q.correct, time: q.time })) };
+    const rec = (p, kicked) => ({ key: p.key, full: p.full, nick: p.name, dept: p.dept || '', score: p.score || 0, hist: p.hist || [], joinedAt: p.joinedAt, kicked });
+    return { ...s, players: [...[...this.players.values()].map(p => rec(p, false)), ...this.removed.map(p => rec(p, true))] };
+  },
+  saveSession() { if (this.session?.startedAt) Report.save(this.sessionSnapshot()); },
+
+  /* ---------- PM monitor: encrypted over the same brokers (see Net.Seal) ---------- */
+  pushState(now) {
+    if (!this.admins?.size || !this.admKey) return;
+    if (!now) { if (this.stateT) return; this.stateT = setTimeout(() => { this.stateT = 0; this.pushState(true); }, 700); return; }
+    clearTimeout(this.stateT); this.stateT = 0;
+    const snap = this.sessionSnapshot();
+    const played = snap.played || 0;
+    const rank = this.ranking();
+    const players = rank.map((p, i) => ({
+      key: p.key, full: p.full, nick: p.name, dept: p.dept || '', connected: p.connected, score: p.score, rank: i + 1,
+      hist: p.hist || [], correct: (p.hist || []).slice(0, played).filter(x => x && x.ok).length,
+      answeredNow: this.phase === 'question' ? this.answers.has(p.key) : null
+    }));
+    const state = this.phase === 'idle' ? null : {
+      pin: this.pin, title: this.quiz.title, phase: this.phase, qi: this.qi, total: this.qs.length, played,
+      players, joinedKeys: [...this.players.keys()],
+      pending: [...this.pending.entries()].map(([key, x]) => ({ key, full: x.full, nick: x.nick, dept: x.dept })),
+      kicked: [...this.kicked.entries()].map(([key, x]) => ({ key, full: x.full, nick: x.nick })),
+      roster: this.roster, session: snap
+    };
+    this.sendAdmins({ type: 'state', state });
+  },
+  sendAdmin(conn, obj) { if (this.admKey && conn.open) Net.Seal.seal(this.admKey, obj).then(pkt => conn.send(pkt), () => {}); },
+  sendAdmins(obj) {
+    if (!this.admKey || !this.admins.size) return;
+    Net.Seal.seal(this.admKey, obj).then(pkt => { for (const c of this.admins) if (c.open) c.send(pkt); }, () => {});
+  },
+
+  // A PM monitor proves it knows the passcode by sending something we can decrypt.
+  async onAdmin(conn, m) {
+    if (!this.admKey || (conn.admFails || 0) >= 5) return;
+    let d;
+    try { d = await Net.Seal.open(this.admKey, m); } catch {
+      conn.admFails = (conn.admFails || 0) + 1;
+      conn.send({ t: 'adm-denied', left: 5 - conn.admFails });
+      if (conn.admFails >= 5) setTimeout(() => conn.close(), 300);
+      return;
+    }
+    if (!this.admins.has(conn)) {
+      this.admins.add(conn);
+      conn.on('close', () => this.admins.delete(conn));
+      toast('PM เชื่อมต่อหน้า Monitor แล้ว');
+    }
+    this.onMonitor(d, conn);
+  },
+
+  onMonitor(d, conn) {
+    if (!d || this.phase === 'idle') return;
+    if (d.type === 'hello') return this.pushState(true);
+    if (d.type !== 'cmd') return;
+    switch (d.cmd) {
+      case 'history':
+        return this.sendAdmin(conn, { type: 'history', list: Report.list().map(x => ({ id: x.id, title: x.title, startedAt: x.startedAt, endedAt: x.endedAt })) });
+      case 'getSession':
+        return this.sendAdmin(conn, { type: 'session', s: Report.get(d.id) });
+      case 'advance':
+        if (this.phase === 'lobby') this.startGame(true);
+        else if (this.phase === 'question') this.endQuestion();
+        else $('[data-next]')?.click();
+        break;
+      case 'skip': this.endQuestion(); break;
+      case 'kick': this.kick(d.key, true); break;
+      case 'approve': this.approve(d.key); break;
+      case 'reject': this.reject(d.key); break;
+      case 'unkick': this.kicked.delete(d.key); break;
+      case 'roster':
+        this.roster = { only: !!d.roster?.only, names: Array.isArray(d.roster?.names) ? d.roster.names.map(Report.cleanName).filter(Boolean) : [] };
+        Report.saveRoster(this.roster);
+        if (!this.roster.only) for (const k of [...this.pending.keys()]) this.approve(k);
+        else for (const [k] of this.pending) if (this.rosterKeys().has(k)) this.approve(k);
+        break;
+    }
+    this.pushState(true);
+  },
+  rosterKeys() { return new Set(this.roster.names.map(Report.normName)); },
+
+  approve(key) {
+    const x = this.pending.get(key); if (!x) return;
+    this.pending.delete(key);
+    if (!this.rosterKeys().has(key)) { this.roster = { ...this.roster, names: [...this.roster.names, x.full] }; Report.saveRoster(this.roster); }
+    this.onJoin(x.conn, x.m);
+  },
+  reject(key) {
+    const x = this.pending.get(key); if (!x) return;
+    this.pending.delete(key);
+    try { x.conn.send({ t: 'error', msg: 'ผู้จัดไม่อนุมัติให้เข้าห้องนี้' }); } catch { /* ignore */ }
+    setTimeout(() => { try { x.conn.close(); } catch { /* ignore */ } }, 400);
+  },
+  uniqueNick(nick, key, full) {
+    const taken = n => [...this.players.values()].some(p => p.key !== key && p.name.toLocaleLowerCase('th') === n.toLocaleLowerCase('th'));
+    if (!taken(nick)) return nick;
+    const sur = full.split(' ').slice(-1)[0] || '';
+    let alt = `${nick} ${[...sur][0] || ''}.`.slice(0, 18);
+    for (let i = 2; taken(alt); i++) alt = `${nick} ${i}`;
+    return alt;
+  },
   broadcast(msg) {
     if (typeof msg === 'function') { for (const p of this.players.values()) this.send(p, msg(p)); return; }
     try { this.peer?.broadcast(msg); } catch { /* ignore */ }
@@ -494,6 +663,7 @@ const Host = {
   },
 
   onClose(conn) {
+    for (const [k, x] of this.pending) if (x.conn === conn) { this.pending.delete(k); this.pushState(); }
     const p = this.byPeer.get(conn.peer);
     this.byPeer.delete(conn.peer);
     if (!p || p.conn !== conn) return;
@@ -506,6 +676,7 @@ const Host = {
   onMsg(conn, m) {
     if (!m || typeof m !== 'object') return;
     if (m.t === 'join') return this.onJoin(conn, m);
+    if (m.t === 'adm') return this.onAdmin(conn, m);
     const p = this.byPeer.get(conn.peer);
     if (!p) return;
     if (m.t === 'answer') {
@@ -520,19 +691,35 @@ const Host = {
   },
 
   onJoin(conn, m) {
-    const name = String(m.name || '').replace(/\s+/g, ' ').trim().slice(0, 16);
+    const full = Report.cleanName(m.full).slice(0, 60);
+    const key = Report.normName(full);
+    const dept = Report.cleanName(m.dept).slice(0, 40);
+    let nick = (Report.cleanName(m.name) || full.split(' ')[0] || '').slice(0, 16);
     const token = String(m.token || '');
     const deny = msg => { try { conn.send({ t: 'error', msg }); } catch { /* ignore */ } setTimeout(() => conn.close(), 400); };
-    if (!name) return deny('กรุณาใส่ชื่อ');
-    const key = name.toLocaleLowerCase('th');
+    if (key.split(' ').length < 2) return deny('กรุณากรอกชื่อและนามสกุลจริง');
+    if (this.kicked.has(key)) return deny('ผู้จัดนำคุณออกจากห้องนี้แล้ว');
     let p = this.players.get(key), isNew = false;
-    if (p && p.token !== token) return deny('ชื่อนี้มีคนใช้แล้ว ลองชื่ออื่นนะ');
+    if (p && p.token !== token && p.connected) return deny('ชื่อนี้กำลังเล่นอยู่ในห้องแล้ว ถ้าเป็นคุณ ให้ปิดหน้าเกมในเครื่องเดิมก่อน');
     if (!p) {
       if (this.phase === 'podium') return deny('เกมจบไปแล้ว');
       if (this.players.size >= 300) return deny('ห้องเต็มแล้ว');
-      p = { key, name, token, score: 0, streak: 0, rank: 0, conn: null, connected: false };
+      if (this.roster.only && !this.rosterKeys().has(key)) {
+        this.pending.set(key, { conn, m, full, nick, dept, at: Date.now() });
+        try { conn.send({ t: 'pending' }); } catch { /* ignore */ }
+        Sound.pop();
+        toast(`${full} รออนุมัติ (กดอนุมัติที่หน้า Monitor)`);
+        this.refreshAdmin();
+        return;
+      }
+      nick = this.uniqueNick(nick, key, full);
+      p = { key, name: nick, full, dept, token, score: 0, streak: 0, rank: 0, conn: null, connected: false, hist: [], joinedAt: Date.now() };
       this.players.set(key, p); isNew = true;
+    } else {
+      p.token = token;
+      if (dept) p.dept = dept;
     }
+    this.pending.delete(key);
     if (p.conn && p.conn !== conn) { this.byPeer.delete(p.conn.peer); try { p.conn.close(); } catch { /* ignore */ } }
     p.conn = conn; p.connected = true; this.byPeer.set(conn.peer, p);
 
@@ -559,10 +746,14 @@ const Host = {
         <span>QR · ${this.pin}</span></button>
       <button class="dock-btn" id="dockPl" title="จัดการผู้เล่น">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="9" cy="8" r="4" fill="currentColor"/><path d="M1 21c0-4.4 3.6-7 8-7s8 2.6 8 7Z" fill="currentColor"/></svg>
-        <b id="dockN">0</b></button>`;
+        <b id="dockN">0</b></button>
+      <button class="dock-btn" id="dockMon" title="เปิดหน้า Monitor ในหน้าต่างแยก (ไม่ต้องแชร์จอนี้)">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 13l3-3 3 2 4-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 21h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Monitor</span></button>`;
     document.body.appendChild(d);
     $('#dockQr').onclick = () => this.panel('qr');
     $('#dockPl').onclick = () => this.panel('players');
+    $('#dockMon').onclick = () => openMonitor();
     this.refreshAdmin();
   },
 
@@ -585,6 +776,7 @@ const Host = {
   },
 
   refreshAdmin() {
+    this.pushState();
     const n = $('#dockN'); if (n) n.textContent = `${this.connectedCount()}/${this.players.size}`;
     const p = $('#adminPanel');
     if (!p || p.dataset.kind !== 'players') return;
@@ -595,7 +787,7 @@ const Host = {
         ${rank.length ? rank.map((x, i) => `
           <div class="ap-row ${x.connected ? '' : 'off'}">
             <span class="ap-rank">${i + 1}</span>${avatar(x.name, 30)}
-            <span class="ap-name">${esc(x.name)}</span>
+            <span class="ap-name">${esc(x.name)} <small class="muted">${esc(x.full)}</small></span>
             <span class="ap-st" title="${x.connected ? 'ออนไลน์' : 'หลุดการเชื่อมต่อ'}"></span>
             ${this.phase === 'question' ? `<span class="ap-ans">${this.answers.has(x.key) ? '✔ ตอบแล้ว' : '…'}</span>` : ''}
             <span class="ap-score">${x.score.toLocaleString()}</span>
@@ -604,11 +796,13 @@ const Host = {
       </div>`;
   },
 
-  kick(key) {
+  kick(key, force) {
     const p = this.players.get(key); if (!p) return;
-    if (!confirm(`เตะ "${p.name}" ออกจากห้อง?`)) return;
+    if (!force && !confirm(`นำ "${p.full}" (${p.name}) ออกจากห้อง? เขาจะกลับเข้ามาไม่ได้จนกว่าจะอนุญาตที่หน้า Monitor`)) return;
     this.send(p, { t: 'kicked' });
     this.players.delete(key);
+    this.kicked.set(key, { full: p.full, nick: p.name });
+    if (this.session?.startedAt) { p.kicked = true; this.removed.push(p); this.saveSession(); }
     if (p.conn) { this.byPeer.delete(p.conn.peer); setTimeout(() => { try { p.conn.close(); } catch { /* ignore */ } }, 300); }
     this.lobbyUpdate(); this.refreshAdmin(); this.updateAnswerCount();
   },
@@ -640,6 +834,7 @@ const Host = {
             <div class="row">
               <button class="icon-btn lg" id="snd" title="เสียง">${Sound.on ? '🔊' : '🔇'}</button>
               <button class="icon-btn lg" id="fs" title="เต็มจอ">⛶</button>
+              <button class="btn btn-ghost" id="mon" title="จัดการผู้เล่น / รายชื่อ / รายงาน ในหน้าต่างแยก">Monitor</button>
               <button class="btn btn-go btn-big" id="start" data-next>เริ่มเกม</button>
             </div>
           </div>
@@ -655,6 +850,8 @@ const Host = {
     $('#snd').onclick = e => { Sound.on = !Sound.on; e.currentTarget.textContent = Sound.on ? '🔊' : '🔇'; };
     $('#fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
     $('#start').onclick = () => this.startGame();
+    $('#mon').onclick = () => openMonitor();
+    this.pushState();
     $('#cancel').onclick = () => { if (confirm('ปิดห้องนี้? ผู้เล่นทั้งหมดจะถูกตัดการเชื่อมต่อ')) editorView(); };
     $('#chips').addEventListener('click', e => {
       const chip = e.target.closest('.chip'); if (!chip) return;
@@ -686,9 +883,11 @@ const Host = {
   },
 
   /* ---------- Game flow ---------- */
-  startGame() {
-    if (!this.players.size && !confirm('ยังไม่มีผู้เล่น เริ่มเลยไหม?')) return;
-    for (const p of this.players.values()) { p.score = 0; p.streak = 0; }
+  startGame(fromMonitor) {
+    if (!this.players.size && !fromMonitor && !confirm('ยังไม่มีผู้เล่น เริ่มเลยไหม?')) return;
+    for (const p of this.players.values()) { p.score = 0; p.streak = 0; p.hist = []; }
+    this.removed = [];
+    this.newSession();
     this.qi = -1;
     this.next();
   },
@@ -703,6 +902,7 @@ const Host = {
     this.phase = 'ready';
     const q = this.qs[this.qi];
     this.broadcast({ t: 'getready', qi: this.qi, total: this.qs.length });
+    this.pushState();
     render(`
       <div class="intro">
         <div class="intro-num"><span>ข้อ</span><b>${this.qi + 1}</b><span>/ ${this.qs.length}</span></div>
@@ -753,6 +953,7 @@ const Host = {
     $('#skip').onclick = () => this.endQuestion();
 
     this.broadcast(this.questionMsg(q, q.time * 1000));
+    this.pushState();
     this.qStart = performance.now();
     this.lastSec = -1;
     const ring = $('#tring'), num = $('#tnum'), timerEl = $('#timer');
@@ -802,7 +1003,9 @@ const Host = {
         p.last = base + bonus; p.score += p.last;
       } else { p.streak = 0; p.last = 0; }
       p.ok = ok;
+      (p.hist ||= [])[this.qi] = a ? { c: a.choice, ok, t: +a.elapsed.toFixed(2), pts: p.last } : { c: null, ok: false, t: null, pts: 0 };
     }
+    if (this.session) { this.session.played = this.qi + 1; this.saveSession(); }
     const rank = this.ranking();
     rank.forEach((p, i) => { p.prevRank = prevOrder.indexOf(p.key) + 1; p.rank = i + 1; });
     let fastest = null;
@@ -850,6 +1053,7 @@ const Host = {
 
   scoreboard() {
     this.phase = 'scoreboard';
+    this.pushState();
     const rank = this.ranking();
     const top = rank.slice(0, 5);
     const max = Math.max(1, top[0]?.score || 1);
@@ -933,6 +1137,8 @@ const Host = {
 
   podium() {
     this.phase = 'podium';
+    if (this.session) { this.session.endedAt = Date.now(); this.saveSession(); }
+    this.pushState();
     const rank = this.ranking();
     this.broadcast(p => ({ t: 'end', rank: p.rank, score: p.score, total: rank.length, top: rank.slice(0, 3).map(x => x.name) }));
     const slot = (p, place) => p ? `
@@ -952,7 +1158,8 @@ const Host = {
         ${rank.length > 3 ? `<details class="all-ranks"><summary>ดูอันดับทั้งหมด (${rank.length} คน)</summary><ol>${rank.map(p => `<li><b>${esc(p.name)}</b><span>${p.score.toLocaleString()}</span></li>`).join('')}</ol></details>` : ''}
         <div class="row center-row">
           <button class="btn" id="again">เล่นอีกรอบ (ห้องเดิม)</button>
-          <button class="btn btn-ghost" id="csv">ดาวน์โหลดผล CSV</button>
+          <button class="btn" id="report">ดูรายงานผล</button>
+          <button class="btn btn-ghost" id="csv">Excel (CSV)</button>
           <button class="btn btn-ghost" id="close">ปิดห้อง</button>
         </div>
       </div>`, 'v-host v-podium');
@@ -962,16 +1169,12 @@ const Host = {
     $('#again').onclick = () => {
       this.phase = 'lobby';
       for (const [k, p] of this.players) if (!p.connected) this.players.delete(k);
-      for (const p of this.players.values()) { p.score = 0; p.streak = 0; this.send(p, { t: 'welcome', name: p.name, score: 0, title: this.quiz.title }); }
+      for (const p of this.players.values()) { p.score = 0; p.streak = 0; p.hist = []; this.send(p, { t: 'welcome', name: p.name, score: 0, title: this.quiz.title }); }
+      this.session = null; this.removed = [];
       this.lobby();
     };
-    $('#csv').onclick = () => {
-      const rows = [['rank', 'name', 'score'], ...rank.map(p => [p.rank, p.name, p.score])];
-      const csv = '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-      a.download = 'quiz-results.csv'; a.click();
-    };
+    $('#report').onclick = () => Report.open(this.sessionSnapshot());
+    $('#csv').onclick = () => Report.downloadCsv(this.sessionSnapshot());
     $('#close').onclick = () => editorView();
   }
 };
@@ -997,9 +1200,9 @@ const Player = {
     } catch { return this.token || (this.token = Math.random().toString(36).slice(2)); }
   },
 
-  join(pin, name) {
+  join(pin, me) {
     this.teardown();
-    this.pin = pin; this.name = name; this.token = this.getToken();
+    this.pin = pin; this.me = me; this.name = me.nick; this.token = this.getToken();
     this.state = 'joining';
     render(`<div class="center">${Art.loader()}<h2>กำลังเชื่อมต่อห้อง ${esc(pin)}...</h2></div>`, 'v-player');
     const net = new Net.Player();
@@ -1013,7 +1216,7 @@ const Player = {
       if (this.peer !== net) return;
       if (!conn) return fail('ไม่พบห้อง PIN นี้ — ผู้จัดอาจยังไม่เปิดห้อง หรือเน็ตบล็อกการเชื่อมต่อ');
       this.conn = conn;
-      const hello = () => conn.send({ t: 'join', name: this.name, token: this.token });
+      const hello = () => conn.send({ t: 'join', name: this.me.nick, full: this.me.full, dept: this.me.dept, token: this.token });
       conn.on('data', m => this.onMsg(m));
       conn.on('close', () => this.lost(conn));
       conn.on('reconnect', hello); // network blip: re-attach to the same player slot
@@ -1032,7 +1235,7 @@ const Player = {
         <p class="muted">คะแนนของคุณยังอยู่ — กดเชื่อมต่อใหม่ด้วยชื่อเดิม</p>
         <div class="row"><button class="btn btn-go" id="re">เชื่อมต่อใหม่</button><button class="btn btn-ghost" id="home">หน้าแรก</button></div>
       </div>`, 'v-player');
-    $('#re').onclick = () => this.join(this.pin, this.name);
+    $('#re').onclick = () => this.join(this.pin, this.me);
     $('#home').onclick = () => homeView();
   },
 
@@ -1057,9 +1260,17 @@ const Player = {
       case 'closed':
         this.state = 'ended'; this.teardown(); homeView(); toast('ผู้จัดปิดห้องแล้ว');
         break;
+      case 'pending':
+        this.state = 'pending';
+        render(`
+          <div class="center grow">
+            ${Art.pulse('<svg viewBox="0 0 24 24" width="60" height="60" aria-hidden="true"><path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6Z" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 8v5l3 2" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>')}
+            <h2>รอผู้จัดอนุมัติ</h2>
+            <p class="muted">ชื่อ <b>${esc(this.me.full)}</b> ยังไม่อยู่ในรายชื่อผู้เข้าร่วม<br>ผู้จัดจะกดอนุมัติให้ในไม่ช้า ไม่ต้องปิดหน้านี้</p>
+          </div>`, 'v-player v-pwait');
+        break;
       case 'welcome':
         this.state = 'wait'; this.name = m.name; this.score = m.score || 0;
-        try { sessionStorage.setItem('cq-player', JSON.stringify({ name: this.name, pin: this.pin })); } catch { /* ignore */ }
         if (history.replaceState) history.replaceState(null, '', location.pathname);
         render(`
           ${this.topbar()}
