@@ -142,14 +142,21 @@ const Net = (() => {
       this.dead = false;
       // Try every broker at once; keep the first one that has this room open.
       const will = { topic: base + 'h', payload: enc({ from: id, m: { t: '_bye' } }), qos: 1 };
-      const tries = BROKERS.map(async url => {
-        const c = await connectBroker(url, { clientId: id, will }, 8000);
-        if (await roomIsOpen(c, base, 3000)) return c;
-        c.end(false); // graceful: a forced close would fire our will and drop us from the game
-        throw new Error('no room');
-      });
-      let c;
-      try { c = await Promise.any(tries); } catch { return null; }
+      let c, tries;
+      // Busy public brokers sometimes answer slowly: retry a few rounds before giving up,
+      // but stop at once when a broker answered and the room simply isn't there.
+      for (let round = 0; round < 3 && !c && !this.dead; round++) {
+        tries = BROKERS.map(async url => {
+          const cl = await connectBroker(url, { clientId: id, will }, 8000);
+          if (await roomIsOpen(cl, base, 3000)) return cl;
+          cl.end(false); // graceful: a forced close would fire our will and drop us from the game
+          throw new Error('no room');
+        });
+        try { c = await Promise.any(tries); } catch (agg) {
+          if (agg.errors?.some(e => e.message === 'no room')) return null;
+        }
+      }
+      if (!c) return null;
       tries.forEach(t => t.then(o => { if (o !== c) o.end(false); }, () => {}));
       if (this.dead) { c.end(true); return null; }
       {

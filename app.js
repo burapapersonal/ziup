@@ -1008,7 +1008,7 @@ const Player = {
       if (this.peer !== net || this.state !== 'joining') return;
       this.teardown(); homeView(pin); toast(msg, 4500);
     };
-    this.joinTimer = setTimeout(() => fail('เชื่อมต่อไม่สำเร็จ — ตรวจ PIN และอินเทอร์เน็ต แล้วลองใหม่'), 30000);
+    this.joinTimer = setTimeout(() => fail('เชื่อมต่อไม่สำเร็จ — ตรวจ PIN และอินเทอร์เน็ต แล้วลองใหม่'), 40000);
     net.join(pin).then(conn => {
       if (this.peer !== net) return;
       if (!conn) return fail('ไม่พบห้อง PIN นี้ — ผู้จัดอาจยังไม่เปิดห้อง หรือเน็ตบล็อกการเชื่อมต่อ');
