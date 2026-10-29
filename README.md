@@ -5,7 +5,10 @@ A live, Kahoot-style quiz that runs as a static site (GitHub Pages works). Playe
 ## How to use
 **Host (on the projector screen)**
 1. Open the website → **Create room / manage questions (host)** (สร้างห้อง / จัดการคำถาม)
-2. Edit questions (saved automatically in this browser; import/export as JSON) → **▶ Open room** (เปิดห้อง)
+2. The **Question sets** page (ชุดคำถาม) lists your sets. Each card has **▶ Open room** (เปิดห้อง), **Edit**, copy and delete. Sets are saved in this browser.
+   - **Create a new set** from a template: Cybersecurity Awareness 2026, Phishing & email, Passwords & MFA, PDPA & personal data, phone & social-media scams, or a blank set. You get your own copy to edit; the template doesn't change.
+   - **Import from file** adds a JSON file (from **Export JSON** on the edit page) as a new set.
+   - The PM passcode and game server settings are on this page too.
 3. The screen shows a **QR code + 6-digit PIN**. Players scan it and enter a nickname.
 4. Click **Start game** (เริ่มเกม). Shortcut: `Space` / `Enter` = next step.
 5. During the game, use the buttons at the bottom right:

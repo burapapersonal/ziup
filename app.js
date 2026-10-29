@@ -233,15 +233,6 @@ const Art = {
 
 /* ---------------- Quiz storage ---------------- */
 const Store = {
-  KEY: 'cyberquiz-quiz',
-  load() {
-    try {
-      const q = JSON.parse(localStorage.getItem(this.KEY));
-      if (q && Array.isArray(q.questions) && q.questions.length) return q;
-    } catch { /* ignore */ }
-    return structuredClone(window.DEFAULT_QUIZ);
-  },
-  save(q) { try { localStorage.setItem(this.KEY, JSON.stringify(q)); } catch { /* ignore */ } },
   // Passcode the PM types on the Monitor page. Kept only in this browser; never sent over the network.
   pmCode() {
     try {
@@ -262,6 +253,47 @@ const Store = {
   hostPass() { try { return localStorage.getItem('ziup-hostpass') || ''; } catch { return Store._hp || ''; } },
   setHostPass(v) { try { localStorage.setItem('ziup-hostpass', v); } catch { Store._hp = v; } }
 };
+// The organiser's question sets, kept in this browser. Each set is { id, title, questions, updatedAt };
+// `current` is the one last opened. Templates (templates.js) are copied in, never edited in place.
+const Library = {
+  KEY: 'ziup-library',
+  data: null,
+  load() {
+    if (this.data) return this.data;
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(this.KEY)); } catch { /* ignore */ }
+    if (!d || !Array.isArray(d.sets)) {
+      d = { current: null, sets: [] };
+      // the single quiz earlier versions kept becomes the first set
+      let old = null;
+      try { old = JSON.parse(localStorage.getItem('cyberquiz-quiz')); } catch { /* ignore */ }
+      d.sets.push(this.make(old && Array.isArray(old.questions) && old.questions.length ? old : window.QUIZ_TEMPLATES[0]));
+      d.current = d.sets[0].id;
+      this.data = d; this.save();
+    }
+    return (this.data = d);
+  },
+  save() {
+    try { localStorage.setItem(this.KEY, JSON.stringify(this.data)); }
+    catch { toast('บันทึกชุดคำถามไม่ได้ — พื้นที่ในเบราว์เซอร์เต็ม ลองลบรายงานเก่าที่หน้า Monitor'); }
+  },
+  make(src) {
+    return { id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: String(src.title || 'ชุดคำถาม').slice(0, 80), questions: structuredClone(src.questions), updatedAt: Date.now() };
+  },
+  sets() { return this.load().sets; },
+  get(id) { return this.sets().find(x => x.id === id) || null; },
+  current() { const d = this.load(); return this.get(d.current) || d.sets[0] || null; },
+  open(id) { this.load().current = id; this.save(); },
+  add(src, title) { const x = this.make(src); if (title) x.title = title; this.load().sets.unshift(x); this.data.current = x.id; this.save(); return x; },
+  remove(id) {
+    const d = this.load();
+    d.sets = d.sets.filter(x => x.id !== id);
+    if (d.current === id) d.current = d.sets[0]?.id || null;
+    this.save();
+  },
+  touch(x) { x.updatedAt = Date.now(); this.save(); }
+};
+
 // Network named in a join link (?b=p for the public fallback); a typed PIN tries ours first.
 const JOIN_NET = new URLSearchParams(location.search).get('b') === 'p' ? 'p' : 'o';
 
@@ -348,16 +380,19 @@ function homeView(prefillPin = '') {
     Sound.pop();
     Player.join(p, info);
   });
-  $('#toHost').addEventListener('click', () => editorView());
+  $('#toHost').addEventListener('click', () => libraryView());
 }
 
 /* ================================================================
    EDITOR (host)
    ================================================================ */
-let quiz = Store.load();
+let quiz = null; // the set open in the editor (an object inside Library)
 
-function editorView() {
+function editorView(id) {
   Host.teardown();
+  if (id) Library.open(id);
+  quiz = Library.current();
+  if (!quiz) return libraryView();
   const qHtml = (q, n) => `
     <article class="qcard" data-n="${n}">
       <div class="qcard-head">
@@ -386,11 +421,23 @@ function editorView() {
   render(`
     <div class="editor">
       <header class="ed-bar">
-        <button class="btn btn-ghost" id="back">← หน้าแรก</button>
+        <button class="btn btn-ghost" id="back">← ชุดคำถาม</button>
         <input class="ed-title" id="title" value="${esc(quiz.title)}" maxlength="80" aria-label="ชื่อชุดคำถาม">
         <button class="btn btn-go" id="launch">▶ เปิดห้อง</button>
       </header>
       <p class="ed-hint">กดวงกลมทางขวาของตัวเลือกเพื่อกำหนดคำตอบที่ถูก · บันทึกอัตโนมัติในเบราว์เซอร์นี้</p>
+      <div class="qlist">${quiz.questions.map(qHtml).join('')}</div>
+      <div class="ed-actions">
+        <button class="btn" id="add">＋ เพิ่มคำถาม</button>
+        <button class="btn btn-ghost" id="export">ส่งออก JSON</button>
+      </div>
+    </div>`, 'v-editor');
+  editorBind();
+}
+
+// Settings that belong to the organiser's browser, not to a set: PM passcode and game server.
+function settingsHtml() {
+  return `
       <div class="pm-row card">
         <div>
           <b>Passcode สำหรับ PM (หน้า Monitor)</b>
@@ -410,20 +457,10 @@ function editorView() {
           <option value="p"${Store.net() === 'p' ? ' selected' : ''}>สาธารณะ (สำรอง) · ~100 คน</option>
         </select>
         <input id="hostPass" class="pm-input" type="password" value="${esc(Store.hostPass())}" maxlength="64" autocomplete="off" spellcheck="false" placeholder="รหัสโฮสต์" aria-label="รหัสโฮสต์">
-      </div>
-      <div class="qlist">${quiz.questions.map(qHtml).join('')}</div>
-      <div class="ed-actions">
-        <button class="btn" id="add">＋ เพิ่มคำถาม</button>
-        <button class="btn btn-ghost" id="export">ส่งออก JSON</button>
-        <label class="btn btn-ghost">นำเข้า JSON<input type="file" id="import" accept=".json,application/json" hidden></label>
-        <button class="btn btn-ghost danger" id="reset">รีเซ็ตเป็นชุดเริ่มต้น</button>
-        <button class="btn btn-ghost" id="monitor">Monitor · รายชื่อ · รายงานย้อนหลัง</button>
-      </div>
-    </div>`, 'v-editor');
+      </div>`;
+}
 
-  const save = () => Store.save(quiz);
-  $('#back').onclick = () => homeView();
-  $('#monitor').onclick = () => openMonitor();
+function settingsBind() {
   $('#pmcode').oninput = e => { const v = e.target.value.trim(); if (v.length >= 6) Store.setPmCode(v); };
   $('#pmcode').onchange = e => { if (e.target.value.trim().length < 6) { toast('passcode ต้องยาวอย่างน้อย 6 ตัว'); e.target.value = Store.pmCode(); } };
   $('#pmNew').onclick = () => { const c = Store.newPmCode(); Store.setPmCode(c); $('#pmcode').value = c; toast('ตั้ง passcode ใหม่แล้ว'); };
@@ -438,6 +475,92 @@ function editorView() {
   netUi();
   $('#netSel').onchange = e => { Store.setNet(e.target.value); netUi(); };
   $('#hostPass').oninput = e => Store.setHostPass(e.target.value.trim());
+}
+
+/* The host's landing page: the organiser's own sets, the templates to start a new one, and settings. */
+function libraryView() {
+  Host.teardown();
+  const sets = Library.sets(), cur = Library.current();
+  const when = ts => ts ? new Date(ts).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  const mine = x => `
+    <article class="lib-card card${x === cur ? ' is-current' : ''}" data-id="${esc(x.id)}">
+      <div class="lc-top"><span class="lc-n">${x.questions.length} ข้อ</span>${x === cur ? '<span class="lc-tag">ใช้ล่าสุด</span>' : ''}<small class="muted">${esc(when(x.updatedAt))}</small></div>
+      <h3>${esc(x.title || 'ไม่มีชื่อ')}</h3>
+      <p class="lc-prev muted">${esc(x.questions[0]?.text || 'ยังไม่มีคำถาม')}</p>
+      <div class="lc-act">
+        <button class="btn btn-go btn-sm" data-launch title="เปิดห้องด้วยชุดนี้">▶ เปิดห้อง</button>
+        <button class="btn btn-sm" data-edit>แก้ไข</button>
+        <button class="icon-btn" data-dup title="ทำสำเนา">⧉</button>
+        <button class="icon-btn danger" data-del title="ลบชุดนี้">✕</button>
+      </div>
+    </article>`;
+  const tpl = t => `
+    <article class="lib-card card tpl" data-tpl="${esc(t.id)}">
+      <div class="lc-top"><span class="lc-n">${t.blank ? 'ว่าง' : t.questions.length + ' ข้อ'}</span><small class="muted">เทมเพลต</small></div>
+      <h3>${esc(t.title)}</h3>
+      <p class="lc-prev muted">${esc(t.desc)}</p>
+      <div class="lc-act"><button class="btn btn-sm" data-use>＋ ใช้เทมเพลตนี้</button></div>
+    </article>`;
+  render(`
+    <div class="editor library">
+      <header class="ed-bar">
+        <button class="btn btn-ghost" id="back">← หน้าแรก</button>
+        <h1 class="lib-title">ชุดคำถาม</h1>
+        <button class="btn btn-ghost" id="monitor">Monitor · รายงานย้อนหลัง</button>
+      </header>
+      ${settingsHtml()}
+      <h2 class="lib-h">ชุดของฉัน <small>${sets.length} ชุด · เก็บในเบราว์เซอร์นี้</small></h2>
+      <div class="lib-grid" id="mine">${sets.length ? sets.map(mine).join('') : '<p class="muted">ยังไม่มีชุดคำถาม เลือกเทมเพลตด้านล่างเพื่อเริ่ม</p>'}</div>
+      <h2 class="lib-h">สร้างชุดใหม่ <small>เลือกเทมเพลตแล้วแก้ไขต่อได้ ตัวเทมเพลตไม่เปลี่ยน</small></h2>
+      <div class="lib-grid" id="tpls">
+        ${window.QUIZ_TEMPLATES.map(tpl).join('')}
+        <label class="lib-card card tpl lib-import">
+          <div class="lc-top"><span class="lc-n">JSON</span></div>
+          <h3>นำเข้าจากไฟล์</h3>
+          <p class="lc-prev muted">ไฟล์ที่ส่งออกจากปุ่ม "ส่งออก JSON" ในหน้าแก้ไข จะเพิ่มเป็นชุดใหม่</p>
+          <div class="lc-act"><span class="btn btn-sm">เลือกไฟล์…</span></div>
+          <input type="file" id="import" accept=".json,application/json" hidden>
+        </label>
+      </div>
+    </div>`, 'v-editor v-library');
+  settingsBind();
+  $('#back').onclick = () => homeView();
+  $('#monitor').onclick = () => openMonitor();
+  $('#mine').addEventListener('click', e => {
+    const card = e.target.closest('[data-id]'); if (!card) return;
+    const x = Library.get(card.dataset.id); if (!x) return;
+    if (e.target.closest('[data-launch]')) return launchSet(x);
+    if (e.target.closest('[data-dup]')) { Library.add(x, (x.title + ' (สำเนา)').slice(0, 80)); toast('ทำสำเนาแล้ว'); return libraryView(); }
+    if (e.target.closest('[data-del]')) {
+      if (!confirm(`ลบชุด "${x.title}" (${x.questions.length} ข้อ)? ลบแล้วกู้คืนไม่ได้ รายงานที่เล่นไปแล้วยังอยู่`)) return;
+      Library.remove(x.id); return libraryView();
+    }
+    if (e.target.closest('[data-edit]') || !e.target.closest('button')) editorView(x.id);
+  });
+  $('#tpls').addEventListener('click', e => {
+    const card = e.target.closest('[data-tpl]'); if (!card || !e.target.closest('[data-use]')) return;
+    const t = window.QUIZ_TEMPLATES.find(x => x.id === card.dataset.tpl); if (!t) return;
+    const x = Library.add(t);
+    toast(t.blank ? 'สร้างชุดใหม่แล้ว เริ่มพิมพ์คำถามได้เลย' : `สร้างชุด "${t.title}" แล้ว แก้ไขได้ตามต้องการ`);
+    editorView(x.id);
+  });
+  $('#import').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const x = Library.add(normalizeQuiz(JSON.parse(await f.text()))); toast('นำเข้าเป็นชุดใหม่แล้ว'); editorView(x.id); }
+    catch (err) { toast('นำเข้าไม่สำเร็จ: ' + err.message); }
+  };
+}
+
+function launchSet(x) {
+  const err = validateQuiz(x);
+  if (err) { toast(err); return editorView(x.id); }
+  Library.open(x.id);
+  Host.open(structuredClone(x));
+}
+
+function editorBind() {
+  const save = () => Library.touch(quiz);
+  $('#back').onclick = () => libraryView();
   $('#title').oninput = e => { quiz.title = e.target.value; save(); };
   $('#add').onclick = () => {
     quiz.questions.push({ text: '', options: ['', '', '', ''], correct: 0, time: 20 });
@@ -450,20 +573,7 @@ function editorView() {
     a.download = (quiz.title || 'quiz').replace(/[^\p{L}\p{N}_-]+/gu, '_') + '.json';
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
-  $('#import').onchange = async e => {
-    const f = e.target.files[0]; if (!f) return;
-    try { quiz = normalizeQuiz(JSON.parse(await f.text())); save(); editorView(); toast('นำเข้าเรียบร้อย'); }
-    catch (err) { toast('นำเข้าไม่สำเร็จ: ' + err.message); }
-  };
-  $('#reset').onclick = () => {
-    if (!confirm('ล้างคำถามทั้งหมดแล้วกลับไปใช้ชุดเริ่มต้น?')) return;
-    quiz = structuredClone(window.DEFAULT_QUIZ); save(); editorView();
-  };
-  $('#launch').onclick = () => {
-    const err = validateQuiz(quiz);
-    if (err) return toast(err);
-    Host.open(structuredClone(quiz));
-  };
+  $('#launch').onclick = () => launchSet(quiz);
 
   const list = $('.qlist');
   list.addEventListener('input', e => {
@@ -566,7 +676,7 @@ const Host = {
       render(`<div class="center"><h2>เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</h2><p class="muted">${why}</p>
         <div class="row"><button class="btn" id="retry">ลองใหม่</button><button class="btn btn-ghost" id="back">กลับ</button></div></div>`, 'v-host');
       $('#retry').onclick = () => Host.open(this.quiz);
-      $('#back').onclick = () => editorView();
+      $('#back').onclick = () => libraryView();
     }
   },
 
@@ -895,7 +1005,7 @@ const Host = {
     $('#start').onclick = () => this.startGame();
     $('#mon').onclick = () => openMonitor();
     this.pushState();
-    $('#cancel').onclick = () => { if (confirm('ปิดห้องนี้? ผู้เล่นทั้งหมดจะถูกตัดการเชื่อมต่อ')) editorView(); };
+    $('#cancel').onclick = () => { if (confirm('ปิดห้องนี้? ผู้เล่นทั้งหมดจะถูกตัดการเชื่อมต่อ')) libraryView(); };
     $('#chips').addEventListener('click', e => {
       const chip = e.target.closest('.chip'); if (!chip) return;
       this.kick(chip.dataset.key);
@@ -1234,7 +1344,7 @@ const Host = {
     };
     $('#report').onclick = () => Report.open(this.sessionSnapshot());
     $('#csv').onclick = () => Report.downloadCsv(this.sessionSnapshot());
-    $('#close').onclick = () => editorView();
+    $('#close').onclick = () => libraryView();
   }
 };
 
