@@ -49,6 +49,7 @@
   });
   $('#relog').onclick = e => { e.preventDefault(); $('#nohost').hidden = true; $('#login').hidden = false; $('#lgo').disabled = false; msg(''); };
 
+  let lastSaved = '', lastSaveAt = 0;
   async function onData(m) {
     if (m?.t === 'adm-denied') {
       $('#lgo').disabled = m.left <= 0;
@@ -64,7 +65,15 @@
     }
     if (d.type === 'state') {
       S = d.state; lastState = Date.now();
-      if (S?.session?.startedAt) Report.save(S.session);
+      if (S) {
+        // The host sends each player once; the session record is rebuilt from that list.
+        S.joinedKeys = S.players.map(p => p.key);
+        S.session = { ...S.session, players: [...S.players.map(p => ({ key: p.key, full: p.full, nick: p.nick, dept: p.dept, score: p.score, hist: p.hist, joinedAt: p.joinedAt, kicked: false })), ...(S.removed || [])] };
+      }
+      // Saving a two-thousand-player record on every update would stall the page: save when a
+      // question ends or the game ends, and otherwise at most every 15 s.
+      const mark = S?.session ? `${S.session.id}:${S.session.played}:${S.session.endedAt}` : '';
+      if (S?.session?.startedAt && (mark !== lastSaved || Date.now() - lastSaveAt > 15000)) { Report.save(S.session); lastSaved = mark; lastSaveAt = Date.now(); }
       if (!S) toast('ผู้จัดปิดห้องแล้ว');
       render();
     } else if (d.type === 'history') {
@@ -100,7 +109,8 @@
     const pl = S.players, online = pl.filter(p => p.connected).length;
     const inQ = S.phase === 'question';
     const rosterKeys = new Set(S.roster.names.map(Report.normName));
-    const notIn = S.roster.names.length ? [...rosterKeys].filter(k => !S.joinedKeys.includes(k)).length : null;
+    const joined = new Set(S.joinedKeys);
+    const notIn = S.roster.names.length ? [...rosterKeys].filter(k => !joined.has(k)).length : null;
     $('#kpis').innerHTML = `
       <div class="k"><span>ออนไลน์ / ทั้งหมด</span><b>${online} / ${pl.length}</b></div>
       <div class="k"><span>ข้อปัจจุบัน</span><b>${S.qi >= 0 ? S.qi + 1 : 0} / ${S.total}</b></div>
@@ -118,9 +128,11 @@
     const rows = pl.filter(p => !q || [p.full, p.nick, p.dept].join(' ').toLocaleLowerCase('th').includes(q));
     if (!rows.length) { box.innerHTML = `<div class="empty">${pl.length ? 'ไม่พบชื่อที่ค้นหา' : 'ยังไม่มีผู้เล่น'}</div>`; return; }
     const played = S.played;
-    box.innerHTML = `<table>
+    const CAP = 300;
+    const more = rows.length - CAP;
+    box.innerHTML = `${more > 0 ? `<div class="empty">แสดง ${CAP} คนแรกตามอันดับ จาก ${rows.length.toLocaleString()} · พิมพ์ชื่อในช่องค้นหาเพื่อหาคนอื่น</div>` : ''}<table>
       <thead><tr><th>#</th><th></th><th>ชื่อ-นามสกุล</th><th>หน่วยงาน</th><th>ข้อนี้</th><th class="r">ถูก</th><th class="r">คะแนน</th><th>รายข้อ</th><th></th></tr></thead>
-      <tbody>${rows.map(p => `
+      <tbody>${rows.slice(0, CAP).map(p => `
         <tr class="${p.connected ? '' : 'off'}">
           <td class="rk">${p.rank}</td>
           <td><span class="dot ${p.connected ? '' : 'off'}" title="${p.connected ? 'ออนไลน์' : 'หลุดการเชื่อมต่อ'}"></span></td>
@@ -151,7 +163,8 @@
     const missing = r.names.filter(n => !joined.has(Report.normName(n))).length;
     $('#rosSub').textContent = r.names.length ? `เข้าแล้ว ${r.names.length - missing} · ยังไม่เข้า ${missing}` : '';
     const sorted = [...r.names].sort((a, b) => (joined.has(Report.normName(a)) - joined.has(Report.normName(b))) || a.localeCompare(b, 'th'));
-    $('#roster').innerHTML = r.names.length ? sorted.map(n => {
+    const RCAP = 400;
+    $('#roster').innerHTML = r.names.length ? (sorted.length > RCAP ? `<div class="empty">แสดง ${RCAP} จาก ${sorted.length.toLocaleString()} รายชื่อ (คนที่ยังไม่เข้าก่อน)</div>` : '') + sorted.slice(0, RCAP).map(n => {
       const inn = joined.has(Report.normName(n));
       return `<div class="li"><div class="grow">${esc(n)}</div><span class="tag ${inn ? 'in' : 'out'}">${inn ? 'เข้าแล้ว' : 'ยังไม่เข้า'}</span><button class="btn sm" data-unroster="${esc(n)}" title="ลบจากรายชื่อ">✕</button></div>`;
     }).join('') : '<div class="empty">ยังไม่มีรายชื่อ ใครมีชื่อ-นามสกุลก็เข้าได้</div>';

@@ -1,0 +1,53 @@
+# Load test: many machines, each sending a share of bot players into a live room.
+# Start a room first (the host stays on a real browser), then run this with its PIN.
+# Each machine has its own address, so the broker's per-address limit sees a realistic crowd.
+name: loadtest
+on:
+  workflow_dispatch:
+    inputs:
+      pin:
+        description: Game PIN of the live room
+        required: true
+      machines:
+        description: How many machines (bots = machines x per_machine)
+        default: '20'
+      per_machine:
+        description: Bots per machine
+        default: '100'
+permissions:
+  contents: read
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.m.outputs.list }}
+    steps:
+      - id: m
+        run: echo "list=$(seq -s, 1 ${{ inputs.machines }} | sed 's/^/[/; s/$/]/')" >> "$GITHUB_OUTPUT"
+  swarm:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        m: ${{ fromJSON(needs.plan.outputs.list) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/loadtest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - working-directory: tools/loadtest
+        run: npm install --no-audit --no-fund
+      - working-directory: tools/loadtest
+        env:
+          PIN: ${{ inputs.pin }}
+          PER: ${{ inputs.per_machine }}
+        run: node swarm.js "$PIN" "$PER" "m${{ matrix.m }}-" > result-${{ matrix.m }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-${{ matrix.m }}
+          path: tools/loadtest/result-${{ matrix.m }}.json

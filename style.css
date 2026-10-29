@@ -177,6 +177,7 @@ h1, h2 { margin: .3em 0; line-height: 1.25; }
 @keyframes bump { 50% { transform: scale(1.25); } }
 .chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-content: flex-start; padding: 8px 0 24px; }
 .chip { display: inline-flex; align-items: center; gap: 8px; border: 0; background: rgba(255, 255, 255, .14); padding: 6px 16px 6px 6px; border-radius: 999px; font-size: 1.15rem; font-weight: 700; cursor: pointer; transition: background .2s, transform .2s; }
+.chips-more { flex-basis: 100%; text-align: center; font-size: 1.3rem; font-weight: 800; opacity: .85; margin-bottom: 4px; }
 .chip:hover { background: var(--red); transform: scale(1.05); }
 .chip:hover span { text-decoration: line-through; }
 .chip.pop { animation: chipIn .6s var(--spring); }

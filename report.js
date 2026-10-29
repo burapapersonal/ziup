@@ -28,12 +28,19 @@ const Report = (() => {
   function list() {
     try { const a = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
   }
+  // A two-thousand-player session is about a megabyte, and a browser keeps about five, so when the
+  // store is full the oldest sessions give way to the current one rather than the save failing.
   function save(sess) {
-    try {
-      const all = list().filter(x => x.id !== sess.id);
-      all.unshift(sess);
-      localStorage.setItem(KEY, JSON.stringify(all.slice(0, MAX_KEEP)));
-    } catch { /* storage full or blocked: report can still be downloaded live */ }
+    const all = list().filter(x => x.id !== sess.id);
+    all.unshift(sess);
+    const parts = all.slice(0, MAX_KEEP).map(x => JSON.stringify(x));
+    // Start from what plausibly fits (browsers allow about five million characters), then back off.
+    let keep = 0;
+    for (let used = 2; keep < parts.length && used + parts[keep].length + 1 < 4.5e6; keep++) used += parts[keep].length + 1;
+    for (keep = Math.max(1, keep); keep >= 1; keep--) {
+      try { localStorage.setItem(KEY, '[' + parts.slice(0, keep).join(',') + ']'); return true; } catch { /* full: drop the oldest */ }
+    }
+    return false; // blocked, or this one session alone is too big: the report can still be downloaded live
   }
   function get(id) { return list().find(x => x.id === id) || null; }
   function remove(id) { try { localStorage.setItem(KEY, JSON.stringify(list().filter(x => x.id !== id))); } catch { /* ignore */ } }

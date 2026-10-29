@@ -254,8 +254,16 @@ const Store = {
   newPmCode() {
     const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
     return Array.from(crypto.getRandomValues(new Uint8Array(8)), b => abc[b % abc.length]).join('');
-  }
+  },
+  // Which broker the room runs on ('o' our ORCA broker, 'p' public fallback), and the host password
+  // our broker asks of the organiser. Both stay in this browser.
+  net() { try { return localStorage.getItem('ziup-net') === 'p' ? 'p' : 'o'; } catch { return 'o'; } },
+  setNet(n) { try { localStorage.setItem('ziup-net', n); } catch { /* ignore */ } },
+  hostPass() { try { return localStorage.getItem('ziup-hostpass') || ''; } catch { return Store._hp || ''; } },
+  setHostPass(v) { try { localStorage.setItem('ziup-hostpass', v); } catch { Store._hp = v; } }
 };
+// Network named in a join link (?b=p for the public fallback); a typed PIN tries ours first.
+const JOIN_NET = new URLSearchParams(location.search).get('b') === 'p' ? 'p' : 'o';
 
 function normalizeQuiz(q) {
   if (!q || !Array.isArray(q.questions)) throw new Error('รูปแบบไฟล์ไม่ถูกต้อง');
@@ -392,6 +400,17 @@ function editorView() {
         <button class="btn btn-ghost btn-sm" id="pmNew">สุ่มใหม่</button>
         <button class="btn btn-ghost btn-sm" id="pmCopy">คัดลอก</button>
       </div>
+      <div class="pm-row card">
+        <div>
+          <b>เซิร์ฟเวอร์เกม</b>
+          <p class="muted" id="netHint"></p>
+        </div>
+        <select id="netSel" class="pm-input" aria-label="เซิร์ฟเวอร์เกม">
+          <option value="o"${Store.net() === 'o' ? ' selected' : ''}>ORCA · ได้ถึง 2,000 คน</option>
+          <option value="p"${Store.net() === 'p' ? ' selected' : ''}>สาธารณะ (สำรอง) · ~100 คน</option>
+        </select>
+        <input id="hostPass" class="pm-input" type="password" value="${esc(Store.hostPass())}" maxlength="64" autocomplete="off" spellcheck="false" placeholder="รหัสโฮสต์" aria-label="รหัสโฮสต์">
+      </div>
       <div class="qlist">${quiz.questions.map(qHtml).join('')}</div>
       <div class="ed-actions">
         <button class="btn" id="add">＋ เพิ่มคำถาม</button>
@@ -409,6 +428,16 @@ function editorView() {
   $('#pmcode').onchange = e => { if (e.target.value.trim().length < 6) { toast('passcode ต้องยาวอย่างน้อย 6 ตัว'); e.target.value = Store.pmCode(); } };
   $('#pmNew').onclick = () => { const c = Store.newPmCode(); Store.setPmCode(c); $('#pmcode').value = c; toast('ตั้ง passcode ใหม่แล้ว'); };
   $('#pmCopy').onclick = () => navigator.clipboard?.writeText(Store.pmCode()).then(() => toast('คัดลอก passcode แล้ว'), () => {});
+  const netUi = () => {
+    const o = $('#netSel').value === 'o';
+    $('#hostPass').hidden = !o;
+    $('#netHint').textContent = o
+      ? 'เซิร์ฟเวอร์ของเราบน ORCA ปลอดภัยและรับคนได้มาก ต้องใส่รหัสโฮสต์ (ขอจากผู้ดูแล) · รหัสเก็บไว้ในเบราว์เซอร์นี้เท่านั้น'
+      : 'ใช้เมื่อเซิร์ฟเวอร์ ORCA ใช้ไม่ได้ · เซิร์ฟเวอร์สาธารณะฟรี รับได้ราว 100 คน ไม่ต้องใช้รหัส';
+  };
+  netUi();
+  $('#netSel').onchange = e => { Store.setNet(e.target.value); netUi(); };
+  $('#hostPass').oninput = e => Store.setHostPass(e.target.value.trim());
   $('#title').oninput = e => { quiz.title = e.target.value; save(); };
   $('#add').onclick = () => {
     quiz.questions.push({ text: '', options: ['', '', '', ''], correct: 0, time: 20 });
@@ -515,9 +544,11 @@ const Host = {
 
   async createPeer(tries) {
     const pin = String(Math.floor(100000 + Math.random() * 900000));
-    const net = new Net.Host();
+    const mode = Store.net();
+    const net = new Net.Host(mode);
     try {
-      const claimed = await net.open(pin);
+      if (mode === 'o' && !Store.hostPass()) throw new Error('auth');
+      const claimed = await net.open(pin, Store.hostPass());
       if (this.phase !== 'connecting') return net.destroy();
       if (!claimed) {
         if (tries < 6) return this.createPeer(tries + 1);
@@ -529,7 +560,10 @@ const Host = {
       this.pushState(true);
     } catch (e) {
       if (this.phase !== 'connecting') return;
-      render(`<div class="center"><h2>เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</h2><p class="muted">${esc(e.message)} — ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่</p>
+      const why = e.message === 'auth'
+        ? 'รหัสโฮสต์ไม่ถูกต้องหรือยังไม่ได้ใส่ — กลับไปหน้าแก้ไขคำถาม แล้วใส่รหัสโฮสต์ที่ช่อง "เซิร์ฟเวอร์เกม"'
+        : `${esc(e.message)} — ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่ หรือสลับไปเซิร์ฟเวอร์สำรองที่หน้าแก้ไขคำถาม`;
+      render(`<div class="center"><h2>เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</h2><p class="muted">${why}</p>
         <div class="row"><button class="btn" id="retry">ลองใหม่</button><button class="btn btn-ghost" id="back">กลับ</button></div></div>`, 'v-host');
       $('#retry').onclick = () => Host.open(this.quiz);
       $('#back').onclick = () => editorView();
@@ -556,22 +590,26 @@ const Host = {
   /* ---------- PM monitor: encrypted over the same brokers (see Net.Seal) ---------- */
   pushState(now) {
     if (!this.admins?.size || !this.admKey) return;
-    if (!now) { if (this.stateT) return; this.stateT = setTimeout(() => { this.stateT = 0; this.pushState(true); }, 700); return; }
+    if (!now) { if (this.stateT) return; this.stateT = setTimeout(() => { this.stateT = 0; this.pushState(true); }, this.players.size > 300 ? 1500 : 700); return; }
     clearTimeout(this.stateT); this.stateT = 0;
     const snap = this.sessionSnapshot();
     const played = snap.played || 0;
     const rank = this.ranking();
     const players = rank.map((p, i) => ({
-      key: p.key, full: p.full, nick: p.name, dept: p.dept || '', connected: p.connected, score: p.score, rank: i + 1,
+      key: p.key, full: p.full, nick: p.name, dept: p.dept || '', connected: p.connected, score: p.score, rank: i + 1, joinedAt: p.joinedAt,
       hist: p.hist || [], correct: (p.hist || []).slice(0, played).filter(x => x && x.ok).length,
       answeredNow: this.phase === 'question' ? this.answers.has(p.key) : null
     }));
+    // The monitor rebuilds the session's player list from `players` + `removed` (see monitor.js),
+    // so the snapshot travels without a second copy of every player.
+    const { players: _all, ...session } = snap;
+    const removed = _all.filter(x => x.kicked);
     const state = this.phase === 'idle' ? null : {
       pin: this.pin, title: this.quiz.title, phase: this.phase, qi: this.qi, total: this.qs.length, played,
-      players, joinedKeys: [...this.players.keys()],
+      players,
       pending: [...this.pending.entries()].map(([key, x]) => ({ key, full: x.full, nick: x.nick, dept: x.dept })),
       kicked: [...this.kicked.entries()].map(([key, x]) => ({ key, full: x.full, nick: x.nick })),
-      roster: this.roster, session: snap
+      roster: this.roster, session, removed
     };
     this.sendAdmins({ type: 'state', state });
   },
@@ -642,7 +680,9 @@ const Host = {
     setTimeout(() => { try { x.conn.close(); } catch { /* ignore */ } }, 400);
   },
   uniqueNick(nick, key, full) {
-    const taken = n => [...this.players.values()].some(p => p.key !== key && p.name.toLocaleLowerCase('th') === n.toLocaleLowerCase('th'));
+    const used = new Set();
+    for (const p of this.players.values()) if (p.key !== key) used.add(p.nameL ||= p.name.toLocaleLowerCase('th'));
+    const taken = n => used.has(n.toLocaleLowerCase('th'));
     if (!taken(nick)) return nick;
     const sur = full.split(' ').slice(-1)[0] || '';
     let alt = `${nick} ${[...sur][0] || ''}.`.slice(0, 18);
@@ -685,7 +725,8 @@ const Host = {
       if (!q.idx.includes(c)) return;
       this.answers.set(p.key, { choice: c, elapsed: (performance.now() - this.qStart) / 1000 });
       this.send(p, { t: 'answered' });
-      Sound.beep(700 + this.answers.size * 20, .05, 'sine', .06);
+      const now = performance.now();
+      if (now - (this.beepAt || 0) > 120) { this.beepAt = now; Sound.beep(700 + Math.min(this.answers.size, 40) * 20, .05, 'sine', .06); }
       this.updateAnswerCount();
     }
   },
@@ -703,7 +744,7 @@ const Host = {
     if (p && p.token !== token && p.connected) return deny('ชื่อนี้กำลังเล่นอยู่ในห้องแล้ว ถ้าเป็นคุณ ให้ปิดหน้าเกมในเครื่องเดิมก่อน');
     if (!p) {
       if (this.phase === 'podium') return deny('เกมจบไปแล้ว');
-      if (this.players.size >= 300) return deny('ห้องเต็มแล้ว');
+      if (this.players.size >= (this.peer?.private ? 2500 : 300)) return deny('ห้องเต็มแล้ว');
       if (this.roster.only && !this.rosterKeys().has(key)) {
         this.pending.set(key, { conn, m, full, nick, dept, at: Date.now() });
         try { conn.send({ t: 'pending' }); } catch { /* ignore */ }
@@ -781,10 +822,12 @@ const Host = {
     const p = $('#adminPanel');
     if (!p || p.dataset.kind !== 'players') return;
     const rank = this.ranking();
+    const CAP = 200;
     $('.ap-body', p).innerHTML = `
       <h2>ผู้เล่น (${this.connectedCount()} ออนไลน์ / ${rank.length})</h2>
+      ${rank.length > CAP ? `<p class="muted">แสดง ${CAP} อันดับแรก · ค้นหาและจัดการทุกคนได้ที่หน้า Monitor</p>` : ''}
       <div class="ap-list">
-        ${rank.length ? rank.map((x, i) => `
+        ${rank.length ? rank.slice(0, CAP).map((x, i) => `
           <div class="ap-row ${x.connected ? '' : 'off'}">
             <span class="ap-rank">${i + 1}</span>${avatar(x.name, 30)}
             <span class="ap-name">${esc(x.name)} <small class="muted">${esc(x.full)}</small></span>
@@ -808,7 +851,7 @@ const Host = {
   },
 
   /* ---------- Lobby ---------- */
-  joinUrl() { return `${location.origin}${location.pathname}?pin=${this.pin}`; },
+  joinUrl() { return `${location.origin}${location.pathname}?pin=${this.pin}${this.peer?.net === 'p' ? '&b=p' : ''}`; },
 
   lobby() {
     this.phase = 'lobby';
@@ -863,15 +906,32 @@ const Host = {
 
   lobbyUpdate(newP) {
     if (this.phase !== 'lobby') return;
+    if (newP) this.lobbyNew = newP;
+    if (this.lobbyT) return;
+    this.lobbyT = setTimeout(() => { this.lobbyT = 0; this.lobbyDraw(); }, this.players.size > 60 ? 250 : 0);
+  },
+  // Up to CHIPS players are drawn as chips (the newest); past that the screen says how many more.
+  lobbyDraw() {
+    if (this.phase !== 'lobby') return;
+    const CHIPS = 80;
+    const newP = this.lobbyNew; this.lobbyNew = null;
     const chips = $('#chips'), pc = $('#pc');
     if (!chips) return;
     pc.textContent = this.players.size;
     pc.parentElement.classList.remove('bump'); void pc.offsetWidth; pc.parentElement.classList.add('bump');
     if (!this.players.size) { chips.innerHTML = `<div class="waiting">${Art.loader()}<p>รอผู้เล่นเข้าร่วม...</p></div>`; return; }
+    const shown = [...this.players.values()].slice(-CHIPS);
+    const want = new Set(shown.map(p => p.key));
     const existing = new Set($$('.chip', chips).map(c => c.dataset.key));
     $('.waiting', chips)?.remove();
-    for (const c of $$('.chip', chips)) if (!this.players.has(c.dataset.key)) c.remove();
-    for (const p of this.players.values()) {
+    for (const c of $$('.chip', chips)) if (!want.has(c.dataset.key)) c.remove();
+    let more = $('.chips-more', chips);
+    const extra = this.players.size - shown.length;
+    if (extra > 0) {
+      if (!more) { more = document.createElement('div'); more.className = 'chips-more'; chips.prepend(more); }
+      more.textContent = `+ อีก ${extra.toLocaleString()} คน`;
+    } else more?.remove();
+    for (const p of shown) {
       if (existing.has(p.key)) continue;
       const el = document.createElement('button');
       el.className = 'chip' + (newP === p ? ' pop' : '');
@@ -979,8 +1039,8 @@ const Host = {
     if (ac) { ac.textContent = this.answers.size; ac.classList.remove('beat'); void ac.offsetWidth; ac.classList.add('beat'); }
     const live = this.connectedCount();
     if (of) of.textContent = `จาก ${live}`;
-    let allIn = live > 0;
-    for (const p of this.players.values()) if (p.connected && !this.answers.has(p.key)) { allIn = false; break; }
+    let allIn = live > 0 && this.answers.size >= live;
+    if (allIn) for (const p of this.players.values()) if (p.connected && !this.answers.has(p.key)) { allIn = false; break; }
     if (allIn) { clearTimeout(this.timer); this.timer = setTimeout(() => this.endQuestion(), 600); }
   },
 
@@ -990,7 +1050,7 @@ const Host = {
     cancelAnimationFrame(this.raf); clearTimeout(this.timer);
     const q = this.qs[this.qi];
     const counts = [0, 0, 0, 0];
-    const prevOrder = this.ranking().map(p => p.key);
+    const prevOrder = new Map(this.ranking().map((p, i) => [p.key, i + 1]));
     for (const p of this.players.values()) {
       const a = this.answers.get(p.key);
       if (a) counts[a.choice]++;
@@ -1007,7 +1067,7 @@ const Host = {
     }
     if (this.session) { this.session.played = this.qi + 1; this.saveSession(); }
     const rank = this.ranking();
-    rank.forEach((p, i) => { p.prevRank = prevOrder.indexOf(p.key) + 1; p.rank = i + 1; });
+    rank.forEach((p, i) => { p.prevRank = prevOrder.get(p.key) || 0; p.rank = i + 1; });
     let fastest = null;
     for (const p of this.players.values()) {
       const a = this.answers.get(p.key);
@@ -1212,7 +1272,7 @@ const Player = {
       this.teardown(); homeView(pin); toast(msg, 4500);
     };
     this.joinTimer = setTimeout(() => fail('เชื่อมต่อไม่สำเร็จ — ตรวจ PIN และอินเทอร์เน็ต แล้วลองใหม่'), 40000);
-    net.join(pin).then(conn => {
+    net.join(pin, JOIN_NET).then(conn => {
       if (this.peer !== net) return;
       if (!conn) return fail('ไม่พบห้อง PIN นี้ — ผู้จัดอาจยังไม่เปิดห้อง หรือเน็ตบล็อกการเชื่อมต่อ');
       this.conn = conn;

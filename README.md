@@ -24,7 +24,8 @@ A live, Kahoot-style quiz that runs as a static site (GitHub Pages works). Playe
   - keep a **participant list**; with "allow only listed names" on, anyone not on the list waits for approval, and approving adds them to the list
   - start the game, go to the next step, or end the current question
   - **export the session**: open the report, download Excel (CSV) or the HTML report (print it to PDF)
-- PM traffic is gzip-compressed and **encrypted with AES-256-GCM**, keyed from the passcode and PIN (PBKDF2). The passcode never goes over the network, and people on the public broker can't read the player list or send commands. 5 wrong passcodes lock that connection.
+- PM traffic is gzip-compressed and **encrypted with AES-256-GCM**, keyed from the passcode and PIN (PBKDF2). The passcode never goes over the network, and nobody else on the broker can read the player list or send commands. 5 wrong passcodes lock that connection.
+- **Game server** (question editor page): **ORCA** (default, up to 2,000 players) needs the **host password** from the ORCA admin, typed once in that browser. **Public** is the fallback (~100 players, no password) for when ORCA can't be reached.
 - **Session records**: no database. The host's browser saves every session (who answered what, right/wrong, time, points) in localStorage, and the PM's browser keeps its own copy, synced from the host when the PM logs in. Reports are still available after the room closes. The 40 most recent sessions are kept.
 
 ## Screens
@@ -43,10 +44,10 @@ git push origin main
 The site will be at `https://<user>.github.io/<repo>/`
 
 ## Technical notes
-- Realtime runs through free public MQTT brokers over secure WebSocket (EMQX `:8084` and HiveMQ `:8884`), see `net.js`. Host and players both connect out to a broker, so it works for online meetings where everyone is on a different network (home Wi‑Fi, 4G, office).
-- **The host's browser is the game server.** It listens on both brokers at once, and each phone joins through whichever broker its network can reach.
-- Keep the host tab open in the foreground for the whole game (refreshing ends the room).
-- Messages pass through a public broker under a random room topic. Fine for a quiz (nicknames and answers only); don't put anything sensitive in the questions.
-- A network that blocks ports 8084 and 8884 can't join. Phones can switch to 4G.
-- Public brokers rate-limit each connection (EMQX drops above ~10 msg/s), so the host batches per-player messages into one packet every 250 ms and sends shared messages once. Message rate stays flat however many players join.
+- Realtime runs over MQTT on secure WebSocket, see `net.js`. Host and players both connect out to a broker, so it works for online meetings where everyone is on a different network (home Wi‑Fi, 4G, office).
+- **The host's browser is the game server.** Keep the host tab open in the foreground for the whole game (refreshing ends the room).
+- **ORCA broker** (`wss://orca.bcg-ecop.net/ziup-mqtt`, port 443, behind Imperva): Mosquitto in its own container on ORCA, set up in ORCA's repo under `deploy/mqtt/`. The host logs in as `ziuphost`; players are anonymous, and the broker's ACL holds each player to its own inbox (`h/<id>`) and its own private channel (`p/<id>`). So a player can't answer as someone else, read other players' answers, or fake a question, a result or a closed room. Limits: 400 sockets per address, 3,000 in all.
+- **Public brokers** (fallback: EMQX `:8084`, HiveMQ `:8884`): anyone can read and write the room's topics, and they rate-limit each connection, so the host bundles per-player messages into one packet every 250 ms. A network that blocks those ports can't join; phones can switch to 4G. Join links for this mode end in `&b=p`; a PIN typed by hand tries ORCA first, then public.
+- Big rooms: the lobby shows the newest 80 players and a count, the PM page lists the top 300 (search finds anyone), and when the browser's storage is full the oldest saved sessions make room for the new one.
+- Load test: `.github/workflows/loadtest.yml` sends bots from many GitHub Actions machines into a live room (`tools/loadtest/`).
 - Tested: 100 players (50 per broker) through all 9 questions with every answer and result delivered; plus real-browser runs and a player whose network blocks the first broker.

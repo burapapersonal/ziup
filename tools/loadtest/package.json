@@ -1,0 +1,8 @@
+{
+  "name": "ziup-loadtest",
+  "private": true,
+  "description": "Bots that join a live ZIUP room for load tests (see .github/workflows/loadtest.yml)",
+  "dependencies": {
+    "mqtt": "5.10.1"
+  }
+}
