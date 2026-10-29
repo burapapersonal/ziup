@@ -1074,10 +1074,14 @@ const Host = {
       if (a && a.choice === q.correct && (!fastest || a.elapsed < fastest.t)) fastest = { name: p.name, t: a.elapsed };
     }
     this.stats = { counts, nCorrect: counts[q.correct], fastest, total: rank.length };
+    // One small message per player, carrying both the result and what the phone shows later on the
+    // scoreboard (which then needs one broadcast). With two thousand players every byte here is
+    // multiplied by two thousand on the host's upload, and a backlog delays the next question.
     rank.forEach((p, i) => this.send(p, {
-      t: 'result', ok: p.ok, answered: p.answered, points: p.last, score: p.score, streak: p.streak,
-      rank: p.rank, total: rank.length, correctText: q.options[q.correct], correct: q.correct,
-      ahead: i > 0 ? { name: rank[i - 1].name, gap: rank[i - 1].score - p.score } : null
+      t: 'R', qi: this.qi, c: q.correct, ok: p.ok ? 1 : 0, an: p.answered ? 1 : 0, pts: p.last, sc: p.score, st: p.streak,
+      rk: p.rank, n: rank.length, mv: (this.qi > 0 && p.prevRank) ? p.prevRank - p.rank : 0,
+      ah: i > 0 ? [rank[i - 1].name, rank[i - 1].score - p.score] : 0,
+      ar: rank.slice(Math.max(0, i - 1), i + 2).map(x => x === p ? [x.rank] : [x.rank, x.name, x.score])
     }));
 
     const max = Math.max(1, ...counts);
@@ -1125,12 +1129,7 @@ const Host = {
     const bmax = Math.max(1, ...st.counts);
     const moveOf = p => (this.qi > 0 && p.prevRank) ? p.prevRank - p.rank : 0;
 
-    rank.forEach((p, i) => this.send(p, {
-      t: 'board', qi: this.qi, total: this.qs.length, last, rank: p.rank, players: rank.length,
-      move: moveOf(p), score: p.score, gain: p.last || 0, streak: p.streak,
-      around: rank.slice(Math.max(0, i - 1), i + 2).map(x => ({ rank: x.rank, name: x.name, score: x.score, me: x === p })),
-      ahead: i > 0 ? { name: rank[i - 1].name, gap: rank[i - 1].score - p.score } : null
-    }));
+    this.broadcast({ t: 'showboard', qi: this.qi, total: this.qs.length, last });
 
     const arrow = mv => mv > 0
       ? `<span class="mv up"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 4l7 8h-4v8H9v-8H5Z" fill="currentColor"/></svg>${mv}</span>`
@@ -1354,10 +1353,27 @@ const Player = {
             <div class="tip">${Art.bolt()}<span>ตอบเร็ว = คะแนนเยอะ ตอบถูกติดกันได้โบนัสสูงสุด +500</span></div>
           </div>`, 'v-player v-pready');
         break;
-      case 'board':
-        this.state = 'board'; this.board(m);
+      case 'R': {
+        // the compact result+board message (see Host.endQuestion)
+        const opt = this.lastQ?.qi === m.qi ? this.lastQ.options.find(o => o.i === m.c) : null;
+        const ahead = m.ah ? { name: m.ah[0], gap: m.ah[1] } : null;
+        this.lastR = { ...m, ahead };
+        this.state = 'result';
+        this.result({ ok: !!m.ok, answered: !!m.an, points: m.pts, score: m.sc, streak: m.st, rank: m.rk, total: m.n, correct: m.c, correctText: opt ? opt.text : '', ahead });
         break;
+      }
+      case 'showboard': {
+        const r = this.lastR;
+        if (!r || r.qi !== m.qi) break; // joined after this question's result: wait for the next one
+        this.state = 'board';
+        this.board({
+          qi: m.qi, total: m.total, last: m.last, rank: r.rk, players: r.n, move: r.mv, score: r.sc, gain: r.pts, streak: r.st, ahead: r.ahead,
+          around: r.ar.map(x => x.length === 1 ? { rank: x[0], name: this.name, score: r.sc, me: true } : { rank: x[0], name: x[1], score: x[2], me: false })
+        });
+        break;
+      }
       case 'question':
+        this.lastQ = m;
         this.state = 'question'; this.question(m);
         break;
       case 'answered':
@@ -1424,7 +1440,7 @@ const Player = {
       : `<p class="muted">${lostStreak ? 'สถิติตอบถูกติดกันหายไปแล้ว ข้อหน้าเอาใหม่!' : 'ไม่เป็นไร ข้อหน้าเอาใหม่!'}</p>
          <div class="ans-box">
            <small>คำตอบที่ถูกคือ</small>
-           <div class="ans-right" style="--c:${COLORS[m.correct]}">${shape(m.correct, 26)}<b>${esc(m.correctText)}</b></div>
+           <div class="ans-right" style="--c:${COLORS[m.correct]}">${shape(m.correct, 26)}<b>${esc(m.correctText || 'ดูบนจอใหญ่')}</b></div>
            ${pick ? `<div class="ans-mine" style="--c:${COLORS[pick.i]}">${shape(pick.i, 20)}<span>คุณตอบ: ${esc(pick.text)}</span></div>` : ''}
          </div>`;
     render(`

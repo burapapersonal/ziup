@@ -79,7 +79,9 @@ const Net = (() => {
     constructor(host, client, id) { super(client, null, id); this.host = host; }
     send(m) {
       if (!this.open) return;
-      if (this.host.private) this.client.publish(this.host.base + 'p/' + this.peer, enc(m), { qos: 1 });
+      // QoS 0: thousands of these leave at once, and an acknowledgement for each would double the
+      // traffic on the host's link. Delivery still rides the TCP socket to the broker.
+      if (this.host.private) this.client.publish(this.host.base + 'p/' + this.peer, enc(m), { qos: 0 });
       else this.host.enqueue(this.client, this.peer, m);
     }
   }

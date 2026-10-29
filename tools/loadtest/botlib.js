@@ -46,8 +46,8 @@ function bot(opts) {
           break;
         }
         case 'answered': if (st.sentAt) { M.ackMs.push(Date.now() - st.sentAt); st.sentAt = 0; } break;
-        case 'result': M.results++; break;
-        case 'board': M.boards++; break;
+        case 'R': M.results++; if (m.qi != null) ((M.resArrive ||= {})[m.qi] ||= []).push(Date.now()); break;
+        case 'showboard': M.boards++; break;
         case 'end': M.ends++; break;
         case 'error': M.errors['host: ' + m.msg] = (M.errors['host: ' + m.msg] || 0) + 1; break;
         case '_close': M.closed++; break;
